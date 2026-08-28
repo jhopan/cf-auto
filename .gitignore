@@ -1,0 +1,27 @@
+# Secrets and generated credentials
+.env
+.env.*
+!.env.example
+cf_accounts.json
+test_signup_result.json
+*.token
+*.pem
+*.key
+
+# Debug artifacts and local logs
+debug/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node / editor
+node_modules/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
