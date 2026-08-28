@@ -23,6 +23,7 @@ from cf_modules.cf_helpers import random_password, log
 from cf_modules.cf_signup import CloudflareSignup
 from cf_modules.cf_confirm_email import ConfirmEmail
 from cf_modules.cf_get_apikey import GetApiKey
+from cf_modules.cf_workers_ai import GetWorkersAiToken
 
 # Temp mail adapter (pakai TempMailByJhopanstore API)
 MAIL_BASE = "https://tempmail.renunganbot.qzz.io"
@@ -157,12 +158,21 @@ def main():
             log.error("✗ Gagal ambil API Key")
             return
 
+        # === Module 4: Ambil Workers AI API Token ===
+        workers_ai = GetWorkersAiToken(account_id)
+        workers_ai_token = workers_ai.run(page)
+
+        if not workers_ai_token:
+            log.error("✗ Gagal ambil Workers AI API Token")
+            return
+
     # Simpan hasil
     result = {
         "email": cf_email,
         "password": cf_password,
         "global_api_key": api_key,
         "account_id": account_id,
+        "workers_ai_token": workers_ai_token,
     }
     with open("runner_result.json", "w") as f:
         json.dump(result, f, indent=2)
@@ -170,8 +180,9 @@ def main():
     log.info("═══ SELESAI ═══")
     log.info("Email      : %s", cf_email)
     log.info("Password   : %s", cf_password)
-    log.info("API Key    : %s", api_key[:8] + "..." + api_key[-4:])
-    log.info("Account ID : %s", account_id)
+    log.info("API Key     : %s", api_key[:8] + "..." + api_key[-4:])
+    log.info("Workers AI  : %s", workers_ai_token[:12] + "..." + workers_ai_token[-4:])
+    log.info("Account ID  : %s", account_id)
     log.info("Disimpan   : runner_result.json")
 
 
