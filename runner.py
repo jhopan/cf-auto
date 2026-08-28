@@ -19,11 +19,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from camoufox.sync_api import Camoufox
 from camoufox import DefaultAddons
 
-from cf_modules.cf_helpers import random_password, log
-from cf_modules.cf_signup import CloudflareSignup
-from cf_modules.cf_confirm_email import ConfirmEmail
-from cf_modules.cf_get_apikey import GetApiKey
-from cf_modules.cf_workers_ai import GetWorkersAiToken
+import importlib.util, os as _os
+
+_CF = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "cf-modules")
+
+def _import_module(name):
+    spec = importlib.util.spec_from_file_location(
+        name, _os.path.join(_CF, name + ".py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+_h = _import_module("cf_helpers")
+log = _h.log
+random_password = _h.random_password
+CloudflareSignup = _import_module("cf_signup").CloudflareSignup
+ConfirmEmail = _import_module("cf_confirm_email").ConfirmEmail
+GetApiKey = _import_module("cf_get_apikey").GetApiKey
+GetWorkersAiToken = _import_module("cf_workers_ai").GetWorkersAiToken
 
 # Temp mail adapter (pakai TempMailByJhopanstore API)
 MAIL_BASE = "https://tempmail.renunganbot.qzz.io"

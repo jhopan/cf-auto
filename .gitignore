@@ -25,3 +25,4 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+test_workers_ai_result.json

@@ -24,13 +24,25 @@ from typing import Optional
 
 from playwright.sync_api import Page
 
-from .cf_helpers import (
-    log,
-    fill_input,
-    wait_and_click,
-    wait_for_turnstile,
-    dismiss_cookie_banner,
-)
+# Support baik import sebagai package (cf_modules.cf_workers_ai)
+# maupun standalone (cf_workers_ai langsung)
+try:
+    from .cf_helpers import (
+        log,
+        fill_input,
+        wait_and_click,
+        wait_for_turnstile,
+        dismiss_cookie_banner,
+    )
+except ImportError:
+    # Standalone: cf_helpers sudah di sys.path
+    from cf_helpers import (
+        log,
+        fill_input,
+        wait_and_click,
+        wait_for_turnstile,
+        dismiss_cookie_banner,
+    )
 
 __all__ = ["GetWorkersAiToken"]
 

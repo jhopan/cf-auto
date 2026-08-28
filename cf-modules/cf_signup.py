@@ -17,7 +17,7 @@ import logging
 
 from playwright.sync_api import Page
 
-from .cf_helpers import (
+from cf_helpers import (
     log,
     SIGNUP_URL,
     SEL_EMAIL,
