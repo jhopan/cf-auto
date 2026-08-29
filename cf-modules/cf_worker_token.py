@@ -186,21 +186,45 @@ class GetWorkerToken:
 
                 email_prefix = self.email.split("@")[0]
                 opt = page.evaluate(f"""() => {{
-                    const opts = document.querySelectorAll('[class*="react-select__option"], [role="option"]');
-                    for (const o of opts) {{
-                        const t = o.textContent || '';
-                        if (t.includes('{email_prefix}') || (t.includes('Account') && !t.includes('All accounts'))) {{
-                            const r = o.getBoundingClientRect();
-                            if (r.width > 0) return {{x: r.x + r.width/2, y: r.y + r.height/2, text: t.trim().slice(0,40)}};
+                    // Dump semua element yang ada di menu dropdown
+                    const all = document.querySelectorAll('*');
+                    const results = [];
+                    for (const o of all) {{
+                        const t = (o.textContent || '').trim();
+                        if (t.length > 0 && t.length < 100) {{
+                            if (t.includes('{email_prefix}') ||
+                                t.includes('All accounts') ||
+                                t.includes('Account')) {{
+                                const r = o.getBoundingClientRect();
+                                if (r.width > 0 && r.height > 0) {{
+                                    results.push({{
+                                        tag: o.tagName,
+                                        cls: (o.className||'').toString().slice(0,40),
+                                        text: t.slice(0,50),
+                                        x: r.x + r.width/2,
+                                        y: r.y + r.height/2,
+                                        w: r.width,
+                                    }});
+                                }}
+                            }}
                         }}
                     }}
-                    return null;
+                    return results.slice(0, 10);
                 }}""")
                 if opt:
-                    log.info("→ Klik option akun: %s", opt.get('text',''))
-                    page.mouse.click(opt['x'], opt['y'])
-                    account_selected = True
-                    log.info("✓ Akun dipilih")
+                    log.info("→ Elements found: %d", len(opt))
+                    for o in opt:
+                        log.info("  <%s> '%s' pos=(%.0f,%.0f) w=%.0f",
+                                 o.get('tag',''), o.get('text','')[:30],
+                                 o.get('x',0), o.get('y',0), o.get('w',0))
+                    # Pilih yang berisi email
+                    for o in opt:
+                        t = o.get('text', '')
+                        if email_prefix in t or ("Account" in t and "All accounts" not in t):
+                            page.mouse.click(o['x'], o['y'])
+                            account_selected = True
+                            log.info("✓ Akun dipilih: %s", t[:40])
+                            break
                 else:
                     log.warning("⚠ Option akun tidak ditemukan")
                     page.keyboard.press("Escape")
@@ -239,20 +263,38 @@ class GetWorkerToken:
                 time.sleep(2.0)
 
                 zopt = page.evaluate("""() => {
-                    const opts = document.querySelectorAll('[class*="react-select__option"], [role="option"]');
-                    for (const o of opts) {
-                        if (o.textContent.includes('All zones')) {
-                            const r = o.getBoundingClientRect();
-                            if (r.width > 0) return {x: r.x + r.width/2, y: r.y + r.height/2};
+                    const all = document.querySelectorAll('*');
+                    const results = [];
+                    for (const o of all) {
+                        const t = (o.textContent || '').trim();
+                        if (t.length > 0 && t.length < 50) {
+                            if (t.includes('All zones') || t.includes('zone')) {
+                                const r = o.getBoundingClientRect();
+                                if (r.width > 0 && r.height > 0) {
+                                    results.push({
+                                        tag: o.tagName,
+                                        cls: (o.className||'').toString().slice(0,40),
+                                        text: t.slice(0,40),
+                                        x: r.x + r.width/2, y: r.y + r.height/2,
+                                    });
+                                }
+                            }
                         }
                     }
-                    return null;
+                    return results.slice(0, 10);
                 }""")
                 if zopt:
-                    log.info("→ Klik option 'All zones'")
-                    page.mouse.click(zopt['x'], zopt['y'])
-                    zone_selected = True
-                    log.info("✓ All zones dipilih")
+                    log.info("→ Zone elements: %d", len(zopt))
+                    for o in zopt:
+                        log.info("  <%s> '%s' pos=(%.0f,%.0f)",
+                                 o.get('tag',''), o.get('text','')[:30],
+                                 o.get('x',0), o.get('y',0))
+                    for o in zopt:
+                        if "All zones" in o.get('text',''):
+                            page.mouse.click(o['x'], o['y'])
+                            zone_selected = True
+                            log.info("✓ All zones dipilih")
+                            break
                 else:
                     log.warning("⚠ Option 'All zones' tidak ditemukan")
                     page.keyboard.press("Escape")
