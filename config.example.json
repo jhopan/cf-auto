@@ -1,0 +1,21 @@
+{
+  "temp_mail": {
+    "base_url": "https://tempmail.renunganbot.qzz.io",
+    "api_key": "",
+    "domains": ["renunganbot.qzz.io"],
+    "prefix": "cf"
+  },
+  "password": {
+    "mode": "random",
+    "fixed": "",
+    "length": 16
+  },
+  "browser": {
+    "headless": false,
+    "proxy": ""
+  },
+  "storage": {
+    "accounts_file": "accounts.json",
+    "append": true
+  }
+}
