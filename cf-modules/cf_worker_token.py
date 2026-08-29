@@ -159,173 +159,103 @@ class GetWorkerToken:
 
         page.wait_for_timeout(3000)
 
-        # --- Step D: Account Resources → pilih akun (BUKAN "All accounts") ---
+        # --- Step D: Account Resources → pilih akun ---
         log.info("→ Setting Account Resources...")
 
-        # Scroll ke section "Account Resources"
-        try:
-            loc = page.locator('text="Account Resources"').first
-            if loc.count() > 0:
-                loc.scroll_into_view_if_needed(timeout=5000)
-        except Exception:
-            pass
-        page.wait_for_timeout(1000)
-
-        # Dari DOM dump: dropdown Account Resources ada di posisi (476, 206)
-        # Itu <BUTTON aria-haspopup="listbox"> dengan text "Select..."
-        # Tapi .click() dan JS .click() tidak trigger React.
-        #
-        # SOLUSI: pakai page.mouse.click() di koordinat dropdown!
-        # Ini simulasi klik fisik mouse, PASTI trigger React.
+        # Pakai Playwright accessibility snapshot untuk cari dropdown
+        # Cloudflare render dropdown sebagai <button> dengan aria-haspopup="listbox"
+        # Playwright bisa cari via locator
 
         account_selected = False
 
-        # Cari posisi dropdown "Select..." di Account Resources via JS
+        # Cara 1: Cari semua button[aria-haspopup="listbox"] dengan text "Select..."
+        # Lalu klik yang kedua (index 1) — index 0 = Permissions, index 1 = Account Resources
         try:
-            pos = page.evaluate("""() => {
-                const buttons = Array.from(
-                    document.querySelectorAll('button[aria-haspopup="listbox"]')
-                );
-                for (const btn of buttons) {
-                    if (btn.textContent.includes('Select...')) {
-                        // Cek parent: cari yang ada di Account Resources
-                        let parent = btn.parentElement;
-                        while (parent) {
-                            const txt = parent.textContent || '';
-                            if (txt.includes('Account Resources') &&
-                                !txt.includes('Zone Resources')) {
-                                const rect = btn.getBoundingClientRect();
-                                return {
-                                    x: rect.x + rect.width / 2,
-                                    y: rect.y + rect.height / 2,
-                                    text: btn.textContent.trim().slice(0, 30),
-                                };
-                            }
-                            parent = parent.parentElement;
-                        }
-                    }
-                }
-                return null;
-            }""")
-            if pos:
-                log.info("→ Klik dropdown Account di (%.0f, %.0f): %s",
-                         pos['x'], pos['y'], pos['text'])
-                # Klik tengah dropdown dengan mouse fisik
-                page.mouse.click(pos['x'], pos['y'])
+            btns = page.locator('button[aria-haspopup="listbox"]')
+            total = btns.count()
+            log.info("→ Total dropdown buttons: %d", total)
+
+            # Cari index button "Select..." yang di Account Resources
+            # Dari DOM dump: Permissions ada di atas, Account Resources di tengah
+            select_indices = []
+            for i in range(total):
+                txt = btns.nth(i).text_content() or ""
+                if "Select..." in txt or "Select" in txt:
+                    select_indices.append(i)
+                    log.info("  btn[%d]: '%s'", i, txt.strip()[:30])
+
+            # Klik button "Select..." kedua (Account Resources, bukan Permissions)
+            if len(select_indices) >= 2:
+                idx = select_indices[1]  # kedua "Select..." = Account Resources
+                log.info("→ Klik dropdown Account (btn[%d])", idx)
+                btns.nth(idx).scroll_into_view_if_needed(timeout=5000)
+                page.wait_for_timeout(500)
+                btns.nth(idx).click(force=True, timeout=5000)
                 page.wait_for_timeout(2000)
 
-                # Pilih akun user (BUKAN "All accounts")
+                # Pilih akun user
                 email_prefix = self.email.split("@")[0]
-                opt_pos = page.evaluate(f"""() => {{
-                    const options = document.querySelectorAll(
-                        '[role="option"], li'
-                    );
-                    for (const opt of options) {{
-                        const txt = opt.textContent || '';
-                        if (txt.includes('{email_prefix}') ||
-                            (txt.includes("Account") && !txt.includes("All accounts"))) {{
-                            const rect = opt.getBoundingClientRect();
-                            return {{
-                                x: rect.x + rect.width / 2,
-                                y: rect.y + rect.height / 2,
-                                text: txt.slice(0, 40),
-                            }};
-                        }}
-                    }}
-                    return null;
-                }}""")
-                if opt_pos:
-                    log.info("→ Klik option akun di (%.0f, %.0f): %s",
-                             opt_pos['x'], opt_pos['y'], opt_pos['text'])
-                    page.mouse.click(opt_pos['x'], opt_pos['y'])
-                    account_selected = True
-                    log.info("✓ Akun dipilih")
-                else:
-                    log.warning("⚠ Option akun tidak ditemukan")
+                opts = page.locator('[role="option"]')
+                opt_total = opts.count()
+                log.info("→ Options: %d", opt_total)
+                for j in range(opt_total):
+                    txt = opts.nth(j).text_content() or ""
+                    log.info("  opt[%d]: '%s'", j, txt.strip()[:40])
+                    if email_prefix in txt or ("Account" in txt and "All accounts" not in txt):
+                        opts.nth(j).click(timeout=3000)
+                        account_selected = True
+                        log.info("✓ Akun dipilih: %s", txt.strip()[:40])
+                        break
+
+                if not account_selected:
                     page.keyboard.press("Escape")
-            else:
-                log.warning("⚠ Dropdown Account tidak ditemukan")
+                    page.wait_for_timeout(500)
         except Exception as e:
-            log.warning("⚠ Account Resources error: %s", str(e)[:100])
+            log.warning("⚠ Account error: %s", str(e)[:100])
 
         if not account_selected:
-            log.warning("⚠ Account Resources tidak terpilih otomatis")
+            log.warning("⚠ Account Resources tidak terpilih")
 
         page.wait_for_timeout(1000)
 
-        # --- Step E: Zone Resources → ubah "Specific zone" ke "All zones" ---
+        # --- Step E: Zone Resources → "Specific zone" → "All zones" ---
         log.info("→ Setting Zone Resources (All zones)...")
 
-        try:
-            loc = page.locator('text="Zone Resources"').first
-            if loc.count() > 0:
-                loc.scroll_into_view_if_needed(timeout=5000)
-        except Exception:
-            pass
-        page.wait_for_timeout(1000)
-
         zone_selected = False
-
-        # Cari posisi dropdown "Specific zone" di Zone Resources
         try:
-            zpos = page.evaluate("""() => {
-                const buttons = Array.from(
-                    document.querySelectorAll('button[aria-haspopup="listbox"]')
-                );
-                for (const btn of buttons) {
-                    if (btn.textContent.includes('Specific zone')) {
-                        let parent = btn.parentElement;
-                        while (parent) {
-                            const txt = parent.textContent || '';
-                            if (txt.includes('Zone Resources')) {
-                                const rect = btn.getBoundingClientRect();
-                                return {
-                                    x: rect.x + rect.width / 2,
-                                    y: rect.y + rect.height / 2,
-                                };
-                            }
-                            parent = parent.parentElement;
-                        }
-                    }
-                }
-                return null;
-            }""")
-            if zpos:
-                log.info("→ Klik dropdown Zone di (%.0f, %.0f)",
-                         zpos['x'], zpos['y'])
-                page.mouse.click(zpos['x'], zpos['y'])
-                page.wait_for_timeout(2000)
+            btns = page.locator('button[aria-haspopup="listbox"]')
+            total = btns.count()
 
-                # Pilih "All zones"
-                zopt = page.evaluate("""() => {
-                    const options = document.querySelectorAll('[role="option"], li');
-                    for (const opt of options) {
-                        if (opt.textContent.includes('All zones')) {
-                            const rect = opt.getBoundingClientRect();
-                            return {
-                                x: rect.x + rect.width / 2,
-                                y: rect.y + rect.height / 2,
-                            };
-                        }
-                    }
-                    return null;
-                }""")
-                if zopt:
-                    log.info("→ Klik option 'All zones' di (%.0f, %.0f)",
-                             zopt['x'], zopt['y'])
-                    page.mouse.click(zopt['x'], zopt['y'])
-                    zone_selected = True
-                    log.info("✓ All zones dipilih")
-                else:
-                    log.warning("⚠ Option 'All zones' tidak ditemukan")
-                    page.keyboard.press("Escape")
-            else:
-                log.warning("⚠ Dropdown Zone tidak ditemukan")
+            # Cari button "Specific zone"
+            for i in range(total):
+                txt = btns.nth(i).text_content() or ""
+                if "Specific zone" in txt:
+                    log.info("→ Klik dropdown Zone (btn[%d]): %s", i, txt.strip()[:30])
+                    btns.nth(i).scroll_into_view_if_needed(timeout=5000)
+                    page.wait_for_timeout(500)
+                    btns.nth(i).click(force=True, timeout=5000)
+                    page.wait_for_timeout(2000)
+
+                    # Pilih "All zones"
+                    opts = page.locator('[role="option"]')
+                    opt_total = opts.count()
+                    for j in range(opt_total):
+                        txt = opts.nth(j).text_content() or ""
+                        if "All zones" in txt:
+                            opts.nth(j).click(timeout=3000)
+                            zone_selected = True
+                            log.info("✓ All zones dipilih")
+                            break
+
+                    if not zone_selected:
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(500)
+                    break
         except Exception as e:
-            log.warning("⚠ Zone Resources error: %s", str(e)[:100])
+            log.warning("⚠ Zone error: %s", str(e)[:100])
 
         if not zone_selected:
-            log.warning("⚠ Zone Resources tidak terpilih otomatis")
+            log.warning("⚠ Zone Resources tidak terpilih")
 
         page.wait_for_timeout(1000)
 
