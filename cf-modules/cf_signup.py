@@ -98,8 +98,8 @@ class CloudflareSignup:
             page.keyboard.press("Enter")
         log.info("✓ Tombol Sign up diklik")
 
-        # Tunggu navigasi ke dashboard
-        time.sleep(8.0)
+        # Tunggu navigasi ke dashboard — Cloudflare butuh waktu redirect
+        time.sleep(15.0)
         url = page.url
         log.info("  URL setelah signup: %s", url)
 
