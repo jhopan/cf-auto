@@ -182,48 +182,75 @@ class GetWorkerToken:
             if pos:
                 log.info("→ Klik dropdown Account di (%.0f, %.0f)", pos['x'], pos['y'])
                 page.mouse.click(pos['x'], pos['y'])
-                time.sleep(2.0)
+                # Tunggu sampai menu react-select muncul
+                menu_found = False
+                for _ in range(10):
+                    time.sleep(0.5)
+                    menu_found = page.evaluate("""() => {
+                        return !!document.querySelector(
+                            '[class*="react-select__menu"], [class*="react-select__menu-list"], [class*="menu"]'
+                        );
+                    }""")
+                    if menu_found:
+                        break
+                if menu_found:
+                    log.info("→ Menu Account terbuka")
+                else:
+                    log.warning("⚠ Menu Account tidak terdeteksi, coba tunggu lebih lama")
+                    time.sleep(2)
 
                 email_prefix = self.email.split("@")[0]
+                # Cari option di menu yang terbuka — pakai multiple selector
                 opt = page.evaluate(f"""() => {{
-                    // Cari element yang text-nya PERSIS match (direct text, bukan child)
-                    const all = document.querySelectorAll('*');
                     const results = [];
-                    for (const o of all) {{
-                        // Hanya cek direct text content (child = 0 atau br)
-                        const directText = Array.from(o.childNodes)
-                            .filter(n => n.nodeType === 3)
-                            .map(n => n.textContent.trim())
-                            .join('');
+                    // Cara 1: class react-select__option
+                    let opts = document.querySelectorAll(
+                        '[class*="react-select__option"], [data-value], [role="option"]'
+                    );
+                    for (const o of opts) {{
                         const t = (o.textContent || '').trim();
-                        // Cek kalau text-nya persis "All accounts" atau mengandung email
-                        if ((directText === 'All accounts' ||
-                             t.includes('{email_prefix}')) &&
-                            t.length > 0 && t.length < 100) {{
-                            const r = o.getBoundingClientRect();
-                            if (r.width > 0 && r.height > 0 && r.height < 50) {{
-                                results.push({{
-                                    tag: o.tagName,
-                                    text: t.slice(0,50),
-                                    x: r.x + r.width/2, y: r.y + r.height/2,
-                                }});
+                        const r = o.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0) {{
+                            results.push({{
+                                text: t.slice(0, 60),
+                                x: r.x + r.width/2, y: r.y + r.height/2,
+                                h: r.height,
+                                cls: (o.className||'').toString().slice(0, 40),
+                            }});
+                        }}
+                    }}
+                    // Cara 2: kalau kosong, cari element yang height < 40
+                    // dengan text "All accounts" atau email
+                    if (results.length === 0) {{
+                        const all = document.querySelectorAll('div, span, li');
+                        for (const o of all) {{
+                            const t = (o.textContent || '').trim();
+                            if (t === 'All accounts' || t.includes('{email_prefix}')) {{
+                                const r = o.getBoundingClientRect();
+                                if (r.width > 0 && r.height > 0 && r.height < 40) {{
+                                    results.push({{
+                                        text: t.slice(0, 60),
+                                        x: r.x + r.width/2, y: r.y + r.height/2,
+                                        h: r.height,
+                                        cls: (o.className||'').toString().slice(0, 40),
+                                    }});
+                                }}
                             }}
                         }}
                     }}
-                    // Deduplicate by text
+                    // Deduplicate
                     const seen = new Set();
                     return results.filter(r => {{
-                        if (seen.has(r.text)) return false;
-                        seen.add(r.text);
-                        return true;
+                        if (seen.has(r.text + r.x)) return false;
+                        seen.add(r.text + r.x); return true;
                     }}).slice(0, 10);
                 }}""")
                 if opt:
                     log.info("→ Options found: %d", len(opt))
                     for o in opt:
-                        log.info("  <%s> '%s' pos=(%.0f,%.0f)",
-                                 o.get('tag',''), o.get('text','')[:40],
-                                 o.get('x',0), o.get('y',0))
+                        log.info("  '%s' cls='%s' pos=(%.0f,%.0f) h=%.0f",
+                                 o.get('text','')[:35], o.get('cls','')[:25],
+                                 o.get('x',0), o.get('y',0), o.get('h',0))
                     for o in opt:
                         t = o.get('text', '')
                         if email_prefix in t:
@@ -266,7 +293,22 @@ class GetWorkerToken:
             if zpos:
                 log.info("→ Klik dropdown Zone di (%.0f, %.0f)", zpos['x'], zpos['y'])
                 page.mouse.click(zpos['x'], zpos['y'])
-                time.sleep(2.0)
+                # Tunggu menu muncul
+                zmenu_found = False
+                for _ in range(10):
+                    time.sleep(0.5)
+                    zmenu_found = page.evaluate("""() => {
+                        return !!document.querySelector(
+                            '[class*="react-select__menu"], [class*="react-select__menu-list"], [class*="menu"]'
+                        );
+                    }""")
+                    if zmenu_found:
+                        break
+                if zmenu_found:
+                    log.info("→ Menu Zone terbuka")
+                else:
+                    log.warning("⚠ Menu Zone tidak terdeteksi")
+                    time.sleep(2)
 
                 zopt = page.evaluate("""() => {
                     const all = document.querySelectorAll('*');
