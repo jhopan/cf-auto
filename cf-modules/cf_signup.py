@@ -110,14 +110,41 @@ class CloudflareSignup:
             log.info("  Account ID: %s", aid)
             return aid
 
-        # Mungkin masih loading, tunggu lagi
-        for _ in range(5):
+        # Mungkin masih loading atau ada onboarding screen
+        # Tunggu lebih lama sampai 60 detik
+        for _ in range(30):
             time.sleep(2.0)
-            aid = extract_account_id_from_url(page.url)
+            url = page.url
+            aid = extract_account_id_from_url(url)
             if aid:
                 log.info("✓✓✓ SIGNUP BERHASIL ═══")
                 log.info("  Account ID: %s", aid)
                 return aid
+            # Cek apakah ada onboarding/welcome screen
+            try:
+                body = page.inner_text("body")
+                if "workers-and-pages" in url or "onboard" in url:
+                    log.info("→ Onboarding page terdeteksi, skip...")
+                    break
+            except Exception:
+                pass
+
+        # Jika tidak dapat account ID dari URL, coba dari page content
+        try:
+            aid = page.evaluate("""() => {
+                const links = document.querySelectorAll('a[href*="/"]');
+                for (const a of links) {
+                    const m = a.href.match(/dash\\.cloudflare\\.com\\/([a-f0-9]{20,})/);
+                    if (m) return m[1];
+                }
+                return null;
+            }""")
+            if aid:
+                log.info("✓✓✓ SIGNUP BERHASIL (from page) ═══")
+                log.info("  Account ID: %s", aid)
+                return aid
+        except Exception:
+            pass
 
         log.error("✗ Signup gagal — tidak masuk dashboard")
         log.info("  URL: %s", page.url)
