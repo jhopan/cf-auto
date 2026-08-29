@@ -51,7 +51,7 @@ class CloudflareSignup:
 
         # Buka halaman signup
         page.goto(SIGNUP_URL, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(3000)
+        time.sleep(3.0)
         dismiss_cookie_banner(page)
 
         # Isi email — pakai fill (simulasi keyboard)
@@ -92,13 +92,13 @@ class CloudflareSignup:
                 return None
 
         # Klik Sign up
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
         if not wait_and_click(page, SEL_SIGNUP_BTN, timeout=10000, force=True):
             page.keyboard.press("Enter")
         log.info("✓ Tombol Sign up diklik")
 
         # Tunggu navigasi ke dashboard
-        page.wait_for_timeout(8000)
+        time.sleep(8.0)
         url = page.url
         log.info("  URL setelah signup: %s", url)
 
@@ -111,7 +111,7 @@ class CloudflareSignup:
 
         # Mungkin masih loading, tunggu lagi
         for _ in range(5):
-            page.wait_for_timeout(2000)
+            time.sleep(2.0)
             aid = extract_account_id_from_url(page.url)
             if aid:
                 log.info("✓✓✓ SIGNUP BERHASIL ═══")

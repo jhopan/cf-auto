@@ -22,6 +22,7 @@ from camoufox import DefaultAddons
 import importlib.util, os as _os
 
 _CF = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "cf-modules")
+sys.path.insert(0, _CF)  # Tambah cf-modules ke sys.path agar import cf_helpers jalan
 
 def _import_module(name):
     spec = importlib.util.spec_from_file_location(

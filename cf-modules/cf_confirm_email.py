@@ -81,9 +81,9 @@ class ConfirmEmail:
                     "⚠ Navigasi gagal (attempt %d): %s",
                     attempt + 1, str(e)[:80],
                 )
-                page.wait_for_timeout(3000)
+                time.sleep(3.0)
 
-        page.wait_for_timeout(5000)
+        time.sleep(5.0)
         dismiss_cookie_banner(page)
         log.info("  URL: %s", page.url)
 
@@ -106,7 +106,7 @@ class ConfirmEmail:
             ],
             timeout=5000, force=True,
         )
-        page.wait_for_timeout(2000)
+        time.sleep(2.0)
 
         # --- Step B: Tunggu email verifikasi ---
         log.info("→ Menunggu email verifikasi...")
@@ -143,7 +143,7 @@ class ConfirmEmail:
         log.info("  Dashboard URL (untuk kembali): %s", dashboard_url)
 
         page.goto(verify_link, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(5000)
+        time.sleep(5.0)
         log.info("  URL setelah buka verify link: %s", page.url)
 
         # --- Step D: Jika redirect ke login, isi credentials ---
@@ -191,7 +191,7 @@ class ConfirmEmail:
                 except Exception:
                     continue
 
-            page.wait_for_timeout(1000)
+            time.sleep(1.0)
 
             # Klik tombol submit
             # "Continue with password" atau "Sign in"
@@ -223,7 +223,7 @@ class ConfirmEmail:
                 page.keyboard.press("Enter")
                 log.info("→ Enter ditekan")
 
-            page.wait_for_timeout(5000)
+            time.sleep(5.0)
             log.info("  URL setelah login: %s", page.url)
 
         # --- Step E: Klik Verify/Continue ---
@@ -246,7 +246,7 @@ class ConfirmEmail:
             except Exception:
                 continue
 
-        page.wait_for_timeout(5000)
+        time.sleep(5.0)
         log.info("  URL setelah verify: %s", page.url)
 
         # Cek status verifikasi

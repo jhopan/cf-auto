@@ -68,7 +68,7 @@ class GetWorkersAiToken:
         )
         log.info("→ Navigasi ke: %s", url)
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(5000)
+        time.sleep(5.0)
         dismiss_cookie_banner(page)
         log.info("  URL: %s", page.url)
 
@@ -104,7 +104,7 @@ class GetWorkersAiToken:
             }""")
             log.info("→ Klik Create via JS")
 
-        page.wait_for_timeout(3000)
+        time.sleep(3.0)
 
         # --- Step C: Modal "Create a Workers AI API Token" muncul ---
         # Ubah Token name jadi "jhopanstore"
@@ -156,7 +156,7 @@ class GetWorkersAiToken:
                         }
                     }
                 }""")
-                page.wait_for_timeout(500)
+                time.sleep(0.5)
                 # Clear existing text
                 page.keyboard.press("Control+a")
                 page.keyboard.press("Delete")
@@ -170,7 +170,7 @@ class GetWorkersAiToken:
             log.error("✗ Tidak bisa mengisi Token name")
             return None
 
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
 
         # --- Step D: Klik "Create API Token" di modal ---
         log.info("→ Klik 'Create API Token' di modal...")
@@ -232,13 +232,13 @@ class GetWorkersAiToken:
         # --- Step E: Tunggu halaman token muncul ---
         # Cloudflare akan tampilkan: "API Token Created" + token string
         log.info("→ Menunggu token muncul...")
-        page.wait_for_timeout(5000)
+        time.sleep(5.0)
 
         # Tunggu teks "API Token Created" atau "Copy" muncul
         token = None
         deadline = time.time() + 30
         while time.time() < deadline:
-            page.wait_for_timeout(1000)
+            time.sleep(1.0)
             token = self._extract_token(page)
             if token:
                 break

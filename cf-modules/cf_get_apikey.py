@@ -61,12 +61,18 @@ class GetApiKey:
         log.info("═══ Module 3: Ambil Global API Key ═══")
 
         # --- Step A: Navigasi ke API Tokens ---
-        page.goto(
-            API_TOKENS_URL,
-            wait_until="domcontentloaded",
-            timeout=60000,
-        )
-        page.wait_for_timeout(5000)
+        for attempt in range(3):
+            try:
+                page.goto(
+                    API_TOKENS_URL,
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+                break
+            except Exception as e:
+                log.warning("⚠ Navigasi gagal (attempt %d): %s", attempt + 1, str(e)[:60])
+                time.sleep(3)
+        time.sleep(5.0)
         dismiss_cookie_banner(page)
         log.info("  URL: %s", page.url)
 
@@ -74,7 +80,7 @@ class GetApiKey:
         page.evaluate(
             "window.scrollTo(0, document.body.scrollHeight)"
         )
-        page.wait_for_timeout(2000)
+        time.sleep(2.0)
 
         wait_and_click(
             page,
@@ -84,7 +90,7 @@ class GetApiKey:
             ],
             timeout=15000, force=True,
         )
-        page.wait_for_timeout(3000)
+        time.sleep(3.0)
 
         # --- Step C: Modal "Verify Your Identity" → Send Verification Code ---
         log.info("→ Menunggu modal 'Verify Your Identity'...")
@@ -96,14 +102,14 @@ class GetApiKey:
             ],
             timeout=15000, force=True,
         )
-        page.wait_for_timeout(3000)
+        time.sleep(3.0)
         log.info("✓ Verification code dikirim ke email")
 
         # --- Step D: Tunggu email kode 7-digit ---
         # Hapus inbox lama dulu agar dapat email baru
         self.mail.delete_inbox(self.email)
         log.info("✓ Inbox lama dibersihkan")
-        page.wait_for_timeout(2000)
+        time.sleep(2.0)
 
         log.info("→ Menunggu email kode verifikasi...")
         code_msg = self.mail.wait_for_email(self.email, timeout=120)
@@ -197,7 +203,7 @@ class GetApiKey:
                         }
                     }
                 }""")
-                page.wait_for_timeout(500)
+                time.sleep(0.5)
                 page.keyboard.type(code, delay=50)
                 code_filled = True
                 log.info("✓ Kode diketik via keyboard")
@@ -208,7 +214,7 @@ class GetApiKey:
             log.error("✗ Tidak bisa mengisi kode ke modal!")
             return None
 
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
 
         # --- Step F: Solve Turnstile di modal ---
         solved = wait_for_turnstile(page, timeout=90)
@@ -233,7 +239,7 @@ class GetApiKey:
         # PENTING: pakai page.locator (bukan query_selector) karena
         # :has-text() hanya support di locator, bukan CSS selector
         log.info("→ Klik View di dalam modal...")
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
         view_clicked = False
 
         for modal_sel in [
@@ -291,7 +297,7 @@ class GetApiKey:
         api_key = None
         deadline = time.time() + 30
         while time.time() < deadline:
-            page.wait_for_timeout(500)
+            time.sleep(0.5)
             api_key = self._extract_api_key(page)
             if api_key:
                 break
