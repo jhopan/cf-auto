@@ -38,6 +38,7 @@ CloudflareSignup = _import_module("cf_signup").CloudflareSignup
 ConfirmEmail = _import_module("cf_confirm_email").ConfirmEmail
 GetApiKey = _import_module("cf_get_apikey").GetApiKey
 GetWorkersAiToken = _import_module("cf_workers_ai").GetWorkersAiToken
+GetWorkerToken = _import_module("cf_worker_token").GetWorkerToken
 
 # Temp mail adapter (pakai TempMailByJhopanstore API)
 MAIL_BASE = "https://tempmail.renunganbot.qzz.io"
@@ -180,6 +181,14 @@ def main():
             log.error("✗ Gagal ambil Workers AI API Token")
             return
 
+        # === Module 5: Ambil Worker API Token (Edit Cloudflare Workers) ===
+        worker_tok = GetWorkerToken(cf_email)
+        worker_token = worker_tok.run(page)
+
+        if not worker_token:
+            log.error("✗ Gagal ambil Worker API Token")
+            return
+
     # Simpan hasil
     result = {
         "email": cf_email,
@@ -187,17 +196,19 @@ def main():
         "global_api_key": api_key,
         "account_id": account_id,
         "workers_ai_token": workers_ai_token,
+        "worker_api_token": worker_token,
     }
     with open("runner_result.json", "w") as f:
         json.dump(result, f, indent=2)
 
     log.info("═══ SELESAI ═══")
-    log.info("Email      : %s", cf_email)
-    log.info("Password   : %s", cf_password)
-    log.info("API Key     : %s", api_key[:8] + "..." + api_key[-4:])
-    log.info("Workers AI  : %s", workers_ai_token[:12] + "..." + workers_ai_token[-4:])
-    log.info("Account ID  : %s", account_id)
-    log.info("Disimpan   : runner_result.json")
+    log.info("Email         : %s", cf_email)
+    log.info("Password      : %s", cf_password)
+    log.info("Global API Key: %s", api_key[:8] + "..." + api_key[-4:])
+    log.info("Workers AI    : %s", workers_ai_token[:12] + "..." + workers_ai_token[-4:])
+    log.info("Worker Token  : %s", worker_token[:12] + "..." + worker_token[-4:])
+    log.info("Account ID    : %s", account_id)
+    log.info("Disimpan      : runner_result.json")
 
 
 if __name__ == "__main__":
