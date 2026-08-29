@@ -68,7 +68,13 @@ log "Install dependencies Python..."
 "$PYTHON" -m pip install -r requirements.txt || die "Gagal install pip requirements."
 
 # ------------------------------------------------------------
-# 4. Playwright system deps (Linux saja)
+# 4. Download binary Camoufox browser (DNS/geoip library)
+# ------------------------------------------------------------
+log "Download binary Camoufox browser..."
+"$PYTHON" -m camoufox fetch || warn "camoufox fetch gagal. Jalankan manual: python -m camoufox fetch"
+
+# ------------------------------------------------------------
+# 5. Playwright system deps (Linux saja)
 # ------------------------------------------------------------
 if [ "$OS_NAME" = "linux" ]; then
     log "Install Playwright system dependencies (Linux)..."
@@ -76,7 +82,7 @@ if [ "$OS_NAME" = "linux" ]; then
 fi
 
 # ------------------------------------------------------------
-# 5. Copy config.example.json -> config.json kalau belum ada
+# 6. Copy config.example.json -> config.json kalau belum ada
 # ------------------------------------------------------------
 if [ ! -f config.json ]; then
     if [ -f config.example.json ]; then
@@ -91,7 +97,7 @@ else
 fi
 
 # ------------------------------------------------------------
-# 6. Selesai
+# 7. Selesai
 # ------------------------------------------------------------
 echo ""
 log "═══ INSTALL SELESAI ═══"
