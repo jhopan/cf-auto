@@ -107,141 +107,109 @@ class GetWorkerToken:
 
         # --- Step C: Cari template "Edit Cloudflare Workers" → klik "Use template" ---
         log.info("→ Cari template 'Edit Cloudflare Workers'...")
-
         template_clicked = False
 
-        # Cloudflare render template sebagai div/row, bukan <tr>
-        # Cari baris yang berisi TEKS PERSIS "Edit Cloudflare Workers"
-        # lalu klik tombol "Use template" DI DALAM baris itu
-        for sel in [
-            # Cari elemen yang text-nya persis "Edit Cloudflare Workers"
-            # lalu cari button "Use template" di parent/sibling-nya
-            'text="Edit Cloudflare Workers" >> .. >> button:has-text("Use template")',
-            'div:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
-            'li:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
-            'tr:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
-        ]:
-            try:
-                loc = page.locator(sel).first
-                if loc.count() > 0:
-                    loc.click(force=True, timeout=5000)
-                    template_clicked = True
-                    log.info("✓ Klik Use template (Edit Cloudflare Workers)")
-                    break
-            except Exception:
-                continue
+        try:
+            for sel in [
+                'text="Edit Cloudflare Workers" >> .. >> button:has-text("Use template")',
+                'div:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
+                'li:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
+                'tr:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
+            ]:
+                try:
+                    loc = page.locator(sel).first
+                    if loc.count() > 0:
+                        loc.click(force=True, timeout=5000)
+                        template_clicked = True
+                        log.info("✓ Klik Use template (Edit Cloudflare Workers)")
+                        break
+                except Exception:
+                    continue
+        except Exception as e:
+            log.warning("⚠ Step C locator error: %s", str(e)[:80])
 
         if not template_clicked:
-            # Fallback: cari via JS — CARI PERSIS "Edit Cloudflare Workers"
-            # JANGAN ambil button pertama! Cari row yang text-nya match
-            result = page.evaluate("""() => {
-                // Cari semua elemen yang mengandung "Use template"
-                const btns = Array.from(
-                    document.querySelectorAll('button, a')
-                ).filter(b => b.textContent.includes('Use template'));
-
-                for (const btn of btns) {
-                    // Cari parent container (row/card)
-                    const row = btn.closest('tr, div, li, section');
-                    if (row && row.textContent.includes('Edit Cloudflare Workers')) {
-                        btn.click();
-                        return true;
+            try:
+                result = page.evaluate("""() => {
+                    const btns = Array.from(
+                        document.querySelectorAll('button, a')
+                    ).filter(b => b.textContent.includes('Use template'));
+                    for (const btn of btns) {
+                        const row = btn.closest('tr, div, li, section');
+                        if (row && row.textContent.includes('Edit Cloudflare Workers')) {
+                            btn.click();
+                            return true;
+                        }
                     }
-                }
-                return false;
-            }""")
-            if result:
-                template_clicked = True
-                log.info("✓ Klik Use template via JS (Edit Cloudflare Workers)")
+                    return false;
+                }""")
+                if result:
+                    template_clicked = True
+                    log.info("✓ Klik Use template via JS (Edit Cloudflare Workers)")
+            except Exception as e:
+                log.warning("⚠ Step C JS error: %s", str(e)[:80])
 
         if not template_clicked:
             log.error("✗ Template 'Edit Cloudflare Workers' tidak ditemukan!")
 
         try:
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(5000)
         except Exception:
             pass
 
         print(">>> DEBUG: before Step D", flush=True)
         # --- Step D: Account Resources → pilih akun ---
+        # Pendekatan: JS cari koordinat → page.mouse.click()
         log.info("→ Setting Account Resources...")
         account_selected = False
 
-        # Pakai JS untuk cari & klik react-select control
-        # lalu cari option dan klik via page.mouse.click()
         try:
-            # Step 1: Klik control "Select..." di Account Resources
-            ctrl_pos = page.evaluate("""() => {
-                // Cari semua react-select control
-                const controls = document.querySelectorAll(
-                    'div[class*="react-select__control"], div[class*="control"]'
-                );
-                for (const ctrl of controls) {
+            pos = page.evaluate("""() => {
+                const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
+                for (const ctrl of ctrls) {
                     if (ctrl.textContent.includes('Select...')) {
-                        // Cek parent: Account Resources
                         let p = ctrl;
                         for (let j = 0; j < 15; j++) {
                             p = p.parentElement;
                             if (!p) break;
-                            const txt = p.textContent || '';
-                            if (txt.includes('Account Resources') &&
-                                !txt.includes('Zone Resources')) {
-                                const rect = ctrl.getBoundingClientRect();
-                                return {
-                                    x: rect.x + rect.width / 2,
-                                    y: rect.y + rect.height / 2,
-                                };
+                            if (p.textContent.includes('Account Resources') && !p.textContent.includes('Zone Resources')) {
+                                const r = ctrl.getBoundingClientRect();
+                                return {x: r.x + r.width/2, y: r.y + r.height/2};
                             }
                         }
                     }
                 }
                 return null;
             }""")
-            if ctrl_pos:
-                log.info("→ Klik control Account di (%.0f, %.0f)", ctrl_pos['x'], ctrl_pos['y'])
-                page.mouse.click(ctrl_pos['x'], ctrl_pos['y'])
+            if pos:
+                log.info("→ Klik dropdown Account di (%.0f, %.0f)", pos['x'], pos['y'])
+                page.mouse.click(pos['x'], pos['y'])
                 page.wait_for_timeout(2000)
 
-                # Step 2: Cari option yang berisi email akun
                 email_prefix = self.email.split("@")[0]
-                opt_pos = page.evaluate(f"""() => {{
-                    // Cari semua option di menu yang terbuka
-                    const opts = document.querySelectorAll(
-                        'div[class*="react-select__option"], [role="option"], li'
-                    );
-                    for (const opt of opts) {{
-                        const txt = opt.textContent || '';
-                        if (txt.includes('{email_prefix}') ||
-                            (txt.includes("Account") && !txt.includes("All accounts"))) {{
-                            const rect = opt.getBoundingClientRect();
-                            if (rect.width > 0 && rect.height > 0) {{
-                                return {{
-                                    x: rect.x + rect.width / 2,
-                                    y: rect.y + rect.height / 2,
-                                    text: txt.trim().slice(0, 50),
-                                }};
-                            }}
+                opt = page.evaluate(f"""() => {{
+                    const opts = document.querySelectorAll('[class*="react-select__option"], [role="option"]');
+                    for (const o of opts) {{
+                        const t = o.textContent || '';
+                        if (t.includes('{email_prefix}') || (t.includes('Account') && !t.includes('All accounts'))) {{
+                            const r = o.getBoundingClientRect();
+                            if (r.width > 0) return {{x: r.x + r.width/2, y: r.y + r.height/2, text: t.trim().slice(0,40)}};
                         }}
                     }}
                     return null;
                 }}""")
-                if opt_pos:
-                    log.info("→ Klik option akun di (%.0f, %.0f): %s",
-                             opt_pos['x'], opt_pos['y'], opt_pos['text'])
-                    page.mouse.click(opt_pos['x'], opt_pos['y'])
+                if opt:
+                    log.info("→ Klik option akun: %s", opt.get('text',''))
+                    page.mouse.click(opt['x'], opt['y'])
                     account_selected = True
                     log.info("✓ Akun dipilih")
                 else:
-                    log.warning("⚠ Option akun tidak ditemukan di menu")
+                    log.warning("⚠ Option akun tidak ditemukan")
                     page.keyboard.press("Escape")
-                    page.wait_for_timeout(500)
             else:
-                log.warning("⚠ Control Account tidak ditemukan")
+                log.warning("⚠ Dropdown Account tidak ditemukan")
         except Exception as e:
             log.warning("⚠ Account error: %s", str(e)[:100])
-
-        if not account_selected:
-            log.warning("⚠ Account Resources tidak terpilih")
 
         page.wait_for_timeout(1000)
 
@@ -250,69 +218,50 @@ class GetWorkerToken:
         zone_selected = False
 
         try:
-            # Step 1: Klik control "Specific zone" di Zone Resources
-            zctrl_pos = page.evaluate("""() => {
-                const controls = document.querySelectorAll(
-                    'div[class*="react-select__control"], div[class*="control"]'
-                );
-                for (const ctrl of controls) {
+            zpos = page.evaluate("""() => {
+                const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
+                for (const ctrl of ctrls) {
                     if (ctrl.textContent.includes('Specific zone')) {
                         let p = ctrl;
                         for (let j = 0; j < 15; j++) {
                             p = p.parentElement;
                             if (!p) break;
                             if (p.textContent.includes('Zone Resources')) {
-                                const rect = ctrl.getBoundingClientRect();
-                                return {
-                                    x: rect.x + rect.width / 2,
-                                    y: rect.y + rect.height / 2,
-                                };
+                                const r = ctrl.getBoundingClientRect();
+                                return {x: r.x + r.width/2, y: r.y + r.height/2};
                             }
                         }
                     }
                 }
                 return null;
             }""")
-            if zctrl_pos:
-                log.info("→ Klik control Zone di (%.0f, %.0f)", zctrl_pos['x'], zctrl_pos['y'])
-                page.mouse.click(zctrl_pos['x'], zctrl_pos['y'])
+            if zpos:
+                log.info("→ Klik dropdown Zone di (%.0f, %.0f)", zpos['x'], zpos['y'])
+                page.mouse.click(zpos['x'], zpos['y'])
                 page.wait_for_timeout(2000)
 
-                # Step 2: Cari option "All zones"
-                zopt_pos = page.evaluate("""() => {
-                    const opts = document.querySelectorAll(
-                        'div[class*="react-select__option"], [role="option"], li'
-                    );
-                    for (const opt of opts) {
-                        if (opt.textContent.includes('All zones')) {
-                            const rect = opt.getBoundingClientRect();
-                            if (rect.width > 0 && rect.height > 0) {
-                                return {
-                                    x: rect.x + rect.width / 2,
-                                    y: rect.y + rect.height / 2,
-                                };
-                            }
+                zopt = page.evaluate("""() => {
+                    const opts = document.querySelectorAll('[class*="react-select__option"], [role="option"]');
+                    for (const o of opts) {
+                        if (o.textContent.includes('All zones')) {
+                            const r = o.getBoundingClientRect();
+                            if (r.width > 0) return {x: r.x + r.width/2, y: r.y + r.height/2};
                         }
                     }
                     return null;
                 }""")
-                if zopt_pos:
-                    log.info("→ Klik option 'All zones' di (%.0f, %.0f)",
-                             zopt_pos['x'], zopt_pos['y'])
-                    page.mouse.click(zopt_pos['x'], zopt_pos['y'])
+                if zopt:
+                    log.info("→ Klik option 'All zones'")
+                    page.mouse.click(zopt['x'], zopt['y'])
                     zone_selected = True
                     log.info("✓ All zones dipilih")
                 else:
                     log.warning("⚠ Option 'All zones' tidak ditemukan")
                     page.keyboard.press("Escape")
-                    page.wait_for_timeout(500)
             else:
-                log.warning("⚠ Control Zone tidak ditemukan")
+                log.warning("⚠ Dropdown Zone tidak ditemukan")
         except Exception as e:
             log.warning("⚠ Zone error: %s", str(e)[:100])
-
-        if not zone_selected:
-            log.warning("⚠ Zone Resources tidak terpilih")
 
         page.wait_for_timeout(1000)
 
