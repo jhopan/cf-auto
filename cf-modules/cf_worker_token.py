@@ -181,15 +181,51 @@ class GetWorkerToken:
             }""")
             if pos:
                 log.info("→ Klik dropdown Account di (%.0f, %.0f)", pos['x'], pos['y'])
-                page.mouse.click(pos['x'], pos['y'])
-                # Tunggu sampai menu react-select muncul
+                # Klik control dengan PointerEvent (dari checker email pattern)
+                page.evaluate("""() => {
+                    const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
+                    for (const ctrl of ctrls) {
+                        if (ctrl.textContent.includes('Select...')) {
+                            let p = ctrl;
+                            for (let j = 0; j < 15; j++) {
+                                p = p.parentElement;
+                                if (!p) break;
+                                if (p.textContent.includes('Account Resources') && !p.textContent.includes('Zone Resources')) {
+                                    // PointerEvent + MouseEvent (dari checker email)
+                                    ctrl.dispatchEvent(new PointerEvent('pointerdown',
+                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                    ctrl.dispatchEvent(new PointerEvent('pointerup',
+                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                    ctrl.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+                                    ctrl.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+                                    ctrl.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                                    ctrl.click();
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    return false;
+                }""")
+                # Tunggu menu muncul — cek div dengan role="listbox" atau class menu
                 menu_found = False
                 for _ in range(10):
                     time.sleep(0.5)
                     menu_found = page.evaluate("""() => {
-                        return !!document.querySelector(
-                            '[class*="react-select__menu"], [class*="react-select__menu-list"], [class*="menu"]'
-                        );
+                        // react-select menu bisa pakai class berbeda
+                        // Cek: ada div dengan role="listbox" yang visible?
+                        const lb = document.querySelector('[role="listbox"]');
+                        if (lb) {
+                            const r = lb.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0) return true;
+                        }
+                        // Atau cek div yang baru muncul dengan z-index tinggi
+                        const menus = document.querySelectorAll('[class*="menu"], [class*="Menu"]');
+                        for (const m of menus) {
+                            const r = m.getBoundingClientRect();
+                            if (r.width > 100 && r.height > 50) return true;
+                        }
+                        return false;
                     }""")
                     if menu_found:
                         break
@@ -200,56 +236,37 @@ class GetWorkerToken:
                     time.sleep(2)
 
                 email_prefix = self.email.split("@")[0]
-                # Cari option di menu yang terbuka — pakai multiple selector
+                # Dump SEMUA element di dalam react-select__menu
                 opt = page.evaluate(f"""() => {{
-                    const results = [];
-                    // Cara 1: class react-select__option
-                    let opts = document.querySelectorAll(
-                        '[class*="react-select__option"], [data-value], [role="option"]'
+                    const menu = document.querySelector(
+                        '[class*="react-select__menu"]'
                     );
-                    for (const o of opts) {{
+                    if (!menu) return [{{error: 'no menu found'}}];
+                    const all = menu.querySelectorAll('*');
+                    const results = [];
+                    for (const o of all) {{
                         const t = (o.textContent || '').trim();
-                        const r = o.getBoundingClientRect();
-                        if (r.width > 0 && r.height > 0) {{
-                            results.push({{
-                                text: t.slice(0, 60),
-                                x: r.x + r.width/2, y: r.y + r.height/2,
-                                h: r.height,
-                                cls: (o.className||'').toString().slice(0, 40),
-                            }});
-                        }}
-                    }}
-                    // Cara 2: kalau kosong, cari element yang height < 40
-                    // dengan text "All accounts" atau email
-                    if (results.length === 0) {{
-                        const all = document.querySelectorAll('div, span, li');
-                        for (const o of all) {{
-                            const t = (o.textContent || '').trim();
-                            if (t === 'All accounts' || t.includes('{email_prefix}')) {{
-                                const r = o.getBoundingClientRect();
-                                if (r.width > 0 && r.height > 0 && r.height < 40) {{
-                                    results.push({{
-                                        text: t.slice(0, 60),
-                                        x: r.x + r.width/2, y: r.y + r.height/2,
-                                        h: r.height,
-                                        cls: (o.className||'').toString().slice(0, 40),
-                                    }});
-                                }}
+                        if (t.length > 0 && t.length < 80) {{
+                            const r = o.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0) {{
+                                results.push({{
+                                    tag: o.tagName,
+                                    text: t.slice(0, 50),
+                                    cls: (o.className||'').toString().slice(0, 40),
+                                    x: r.x + r.width/2, y: r.y + r.height/2,
+                                    h: r.height,
+                                }});
                             }}
                         }}
                     }}
-                    // Deduplicate
-                    const seen = new Set();
-                    return results.filter(r => {{
-                        if (seen.has(r.text + r.x)) return false;
-                        seen.add(r.text + r.x); return true;
-                    }}).slice(0, 10);
+                    return results.slice(0, 15);
                 }}""")
                 if opt:
-                    log.info("→ Options found: %d", len(opt))
+                    log.info("→ Menu elements: %d", len(opt))
                     for o in opt:
-                        log.info("  '%s' cls='%s' pos=(%.0f,%.0f) h=%.0f",
-                                 o.get('text','')[:35], o.get('cls','')[:25],
+                        log.info("  <%s> '%s' cls='%s' pos=(%.0f,%.0f) h=%.0f",
+                                 o.get('tag',''), o.get('text','')[:35],
+                                 o.get('cls','')[:25],
                                  o.get('x',0), o.get('y',0), o.get('h',0))
                     for o in opt:
                         t = o.get('text', '')
@@ -292,14 +309,38 @@ class GetWorkerToken:
             }""")
             if zpos:
                 log.info("→ Klik dropdown Zone di (%.0f, %.0f)", zpos['x'], zpos['y'])
-                page.mouse.click(zpos['x'], zpos['y'])
+                # Klik control dengan PointerEvent
+                page.evaluate("""() => {
+                    const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
+                    for (const ctrl of ctrls) {
+                        if (ctrl.textContent.includes('Specific zone')) {
+                            let p = ctrl;
+                            for (let j = 0; j < 15; j++) {
+                                p = p.parentElement;
+                                if (!p) break;
+                                if (p.textContent.includes('Zone Resources')) {
+                                    ctrl.dispatchEvent(new PointerEvent('pointerdown',
+                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                    ctrl.dispatchEvent(new PointerEvent('pointerup',
+                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                    ctrl.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+                                    ctrl.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+                                    ctrl.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                                    ctrl.click();
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    return false;
+                }""")
                 # Tunggu menu muncul
                 zmenu_found = False
                 for _ in range(10):
                     time.sleep(0.5)
                     zmenu_found = page.evaluate("""() => {
                         return !!document.querySelector(
-                            '[class*="react-select__menu"], [class*="react-select__menu-list"], [class*="menu"]'
+                            '[class*="react-select__menu"]'
                         );
                     }""")
                     if zmenu_found:
