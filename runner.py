@@ -35,7 +35,7 @@ def _import_module(name):
     spec.loader.exec_module(mod)
     return mod
 
-from cf_config import load_config, append_account
+from cf_config import load_config, append_account, generate_username
 
 _h = _import_module("cf_helpers")
 log = _h.log
@@ -60,14 +60,13 @@ class TempMailAdapter:
         self.headers = {"X-Email-API-Key": tm["api_key"]} if tm["api_key"] else {}
         self.domains = tm["domains"]
         self.prefix = tm["prefix"]
+        self.cfg = cfg  # simpan config penuh untuk generate_username
         self.s = requests.Session()
 
     def create_inbox(self) -> str:
-        """Buat inbox baru, return email address. Coba tiap domain sampai berhasil."""
-        import string
-
+        """Buat inbox baru, return email address. Username sesuai email_format dari config."""
         for domain in self.domains:
-            username = f"{self.prefix}{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
+            username = generate_username(self.cfg)
             try:
                 r = self.s.post(
                     f"{self.base}/api/inbox",
@@ -195,7 +194,7 @@ def create_one(cfg: dict, args, idx: int):
             log.error("✗ Gagal ambil Worker API Token, stop akun ini.")
             return
 
-    # Simpan hasil (append)
+    # Simpan hasil (append, dedup, JSON + CSV)
     account = {
         "email": cf_email,
         "password": cf_password,
@@ -204,7 +203,7 @@ def create_one(cfg: dict, args, idx: int):
         "worker_api_token": worker_token,
         "account_id": account_id,
     }
-    append_account(cfg, account)
+    res = append_account(cfg, account)
 
     log.info("═══ Akun #%d SELESAI ═══", idx + 1)
     log.info("  Email         : %s", cf_email)
@@ -212,6 +211,11 @@ def create_one(cfg: dict, args, idx: int):
     log.info("  Workers AI    : %s", workers_ai_token[:12] + "..." + workers_ai_token[-4:])
     log.info("  Worker Token  : %s", worker_token[:12] + "..." + worker_token[-4:])
     log.info("  Account ID    : %s", account_id)
+    log.info("  Disimpan      : %s", res["reason"])
+    if res["added"]:
+        log.info("  → Ditambahkan ke accounts.json + accounts.csv")
+    else:
+        log.info("  → Skip (sudah ada): %s", res["reason"])
 
 
 if __name__ == "__main__":

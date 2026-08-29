@@ -3,7 +3,8 @@
     "base_url": "https://tempmail.renunganbot.qzz.io",
     "api_key": "",
     "domains": ["renunganbot.qzz.io"],
-    "prefix": "cf"
+    "prefix": "cf",
+    "email_format": "{prefix}{rand8}"
   },
   "password": {
     "mode": "random",
@@ -16,6 +17,9 @@
   },
   "storage": {
     "accounts_file": "accounts.json",
-    "append": true
+    "csv_file": "accounts.csv",
+    "csv_enabled": true,
+    "append": true,
+    "dedupe_field": "email"
   }
 }
