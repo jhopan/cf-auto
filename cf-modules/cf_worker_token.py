@@ -160,58 +160,100 @@ class GetWorkerToken:
         page.wait_for_timeout(3000)
 
         # --- Step D: Account Resources → pilih akun ---
+        # Cloudflare pakai react-select library!
+        # Element: div.react-select__placeholder (text "Select...")
+        #          input[role="combobox"][class*="react-select"]
+        # Setelah klik: muncul div.react-select__menu dengan
+        # div.react-select__option untuk pilihan
+
         log.info("→ Setting Account Resources...")
-
-        # Pakai Playwright accessibility snapshot untuk cari dropdown
-        # Cloudflare render dropdown sebagai <button> dengan aria-haspopup="listbox"
-        # Playwright bisa cari via locator
-
         account_selected = False
 
-        # Cara 1: Cari semua button[aria-haspopup="listbox"] dengan text "Select..."
-        # Lalu klik yang kedua (index 1) — index 0 = Permissions, index 1 = Account Resources
+        # Cari div placeholder "Select..." yang ADA di section Account Resources
+        # react-select generate ID seperti react-select-16-placeholder
+        # Tapi nomor bisa berubah, jadi cari by text + parent
+
+        # Cara 1: Klik placeholder "Select..." di Account Resources
+        # Pakai CSS class react-select__placeholder
         try:
-            btns = page.locator('button[aria-haspopup="listbox"]')
-            total = btns.count()
-            log.info("→ Total dropdown buttons: %d", total)
+            # Cari semua react-select placeholder dengan text "Select..."
+            placeholders = page.locator('div.react-select__placeholder:has-text("Select...")')
+            ph_count = placeholders.count()
+            log.info("→ react-select placeholders: %d", ph_count)
 
-            # Cari index button "Select..." yang di Account Resources
-            # Dari DOM dump: Permissions ada di atas, Account Resources di tengah
-            select_indices = []
-            for i in range(total):
-                txt = btns.nth(i).text_content() or ""
-                if "Select..." in txt or "Select" in txt:
-                    select_indices.append(i)
-                    log.info("  btn[%d]: '%s'", i, txt.strip()[:30])
+            # Cari yang ada di section Account Resources
+            for i in range(ph_count):
+                parent_text = placeholders.nth(i).evaluate(
+                    "el => el.closest('div, section, fieldset')?.parentElement?.textContent || ''"
+                )
+                # Cek apakah parent mengandung "Account Resources"
+                # tapi BUKAN "Zone Resources" atau "Permissions"
+                check_text = placeholders.nth(i).evaluate(
+                    "el => { let p = el; for(let j=0;j<10;j++){p=p.parentElement; if(!p)return ''; if(p.textContent.includes('Account Resources') && !p.textContent.includes('Zone Resources')) return 'found';} return ''; }"
+                )
+                if check_text == 'found':
+                    log.info("→ Klik placeholder Account (index %d)", i)
+                    placeholders.nth(i).click(force=True, timeout=5000)
+                    page.wait_for_timeout(1500)
 
-            # Klik button "Select..." kedua (Account Resources, bukan Permissions)
-            if len(select_indices) >= 2:
-                idx = select_indices[1]  # kedua "Select..." = Account Resources
-                log.info("→ Klik dropdown Account (btn[%d])", idx)
-                btns.nth(idx).scroll_into_view_if_needed(timeout=5000)
-                page.wait_for_timeout(500)
-                btns.nth(idx).click(force=True, timeout=5000)
-                page.wait_for_timeout(2000)
+                    # Pilih akun (cari option di menu yang muncul)
+                    email_prefix = self.email.split("@")[0]
+                    options = page.locator('div.react-select__option')
+                    opt_count = options.count()
+                    log.info("→ Options: %d", opt_count)
 
-                # Pilih akun user
-                email_prefix = self.email.split("@")[0]
-                opts = page.locator('[role="option"]')
-                opt_total = opts.count()
-                log.info("→ Options: %d", opt_total)
-                for j in range(opt_total):
-                    txt = opts.nth(j).text_content() or ""
-                    log.info("  opt[%d]: '%s'", j, txt.strip()[:40])
-                    if email_prefix in txt or ("Account" in txt and "All accounts" not in txt):
-                        opts.nth(j).click(timeout=3000)
-                        account_selected = True
-                        log.info("✓ Akun dipilih: %s", txt.strip()[:40])
-                        break
+                    for j in range(opt_count):
+                        txt = options.nth(j).text_content() or ""
+                        log.info("  opt[%d]: '%s'", j, txt.strip()[:50])
+                        if email_prefix in txt or ("Account" in txt and "All accounts" not in txt):
+                            options.nth(j).click(timeout=3000)
+                            account_selected = True
+                            log.info("✓ Akun dipilih: %s", txt.strip()[:50])
+                            break
 
-                if not account_selected:
-                    page.keyboard.press("Escape")
-                    page.wait_for_timeout(500)
+                    if not account_selected:
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(500)
+                    break
         except Exception as e:
             log.warning("⚠ Account error: %s", str(e)[:100])
+
+        # Cara 2: Fallback - klik input react-select di Account Resources
+        if not account_selected:
+            try:
+                # Cari input react-select dengan role="combobox" di Account Resources
+                inputs = page.locator('input[role="combobox"][class*="react-select"]')
+                inp_count = inputs.count()
+                log.info("→ react-select inputs: %d", inp_count)
+
+                # Input ke-2 atau ke-3 biasanya Account Resources
+                # (input 1 = Permissions, input 2 = Account Resources)
+                for i in range(inp_count):
+                    check = inputs.nth(i).evaluate(
+                        "el => { let p = el; for(let j=0;j<10;j++){p=p.parentElement; if(!p)return ''; if(p.textContent.includes('Account Resources') && !p.textContent.includes('Zone Resources')) return 'found';} return ''; }"
+                    )
+                    if check == 'found':
+                        log.info("→ Klik input Account (index %d)", i)
+                        inputs.nth(i).click(force=True, timeout=5000)
+                        page.wait_for_timeout(1500)
+
+                        # Pilih akun
+                        email_prefix = self.email.split("@")[0]
+                        options = page.locator('div.react-select__option')
+                        opt_count = options.count()
+                        for j in range(opt_count):
+                            txt = options.nth(j).text_content() or ""
+                            if email_prefix in txt or ("Account" in txt and "All accounts" not in txt):
+                                options.nth(j).click(timeout=3000)
+                                account_selected = True
+                                log.info("✓ Akun dipilih: %s", txt.strip()[:50])
+                                break
+                        if not account_selected:
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(500)
+                        break
+            except Exception as e:
+                log.warning("⚠ Account fallback: %s", str(e)[:100])
 
         if not account_selected:
             log.warning("⚠ Account Resources tidak terpilih")
@@ -220,33 +262,39 @@ class GetWorkerToken:
 
         # --- Step E: Zone Resources → "Specific zone" → "All zones" ---
         log.info("→ Setting Zone Resources (All zones)...")
-
         zone_selected = False
-        try:
-            btns = page.locator('button[aria-haspopup="listbox"]')
-            total = btns.count()
 
-            # Cari button "Specific zone"
-            for i in range(total):
-                txt = btns.nth(i).text_content() or ""
-                if "Specific zone" in txt:
-                    log.info("→ Klik dropdown Zone (btn[%d]): %s", i, txt.strip()[:30])
-                    btns.nth(i).scroll_into_view_if_needed(timeout=5000)
-                    page.wait_for_timeout(500)
-                    btns.nth(i).click(force=True, timeout=5000)
-                    page.wait_for_timeout(2000)
+        # Cari div react-select__single-value dengan text "Specific zone"
+        # lalu klik parent container-nya
+        try:
+            # Cari "Specific zone" value
+            zone_vals = page.locator('div.react-select__single-value:has-text("Specific zone")')
+            zv_count = zone_vals.count()
+            log.info("→ 'Specific zone' values: %d", zv_count)
+
+            for i in range(zv_count):
+                # Klik parent container (react-select__control)
+                parent_check = zone_vals.nth(i).evaluate(
+                    "el => { let p = el; for(let j=0;j<10;j++){p=p.parentElement; if(!p)return ''; if(p.textContent.includes('Zone Resources')) return 'found';} return ''; }"
+                )
+                if parent_check == 'found':
+                    log.info("→ Klik dropdown Zone (index %d)", i)
+                    # Klik parent control
+                    zone_vals.nth(i).evaluate(
+                        "el => { let p = el; while(p && !p.className.includes('react-select__control')) p = p.parentElement; if(p) p.click(); }"
+                    )
+                    page.wait_for_timeout(1500)
 
                     # Pilih "All zones"
-                    opts = page.locator('[role="option"]')
-                    opt_total = opts.count()
-                    for j in range(opt_total):
-                        txt = opts.nth(j).text_content() or ""
+                    options = page.locator('div.react-select__option')
+                    opt_count = options.count()
+                    for j in range(opt_count):
+                        txt = options.nth(j).text_content() or ""
                         if "All zones" in txt:
-                            opts.nth(j).click(timeout=3000)
+                            options.nth(j).click(timeout=3000)
                             zone_selected = True
                             log.info("✓ All zones dipilih")
                             break
-
                     if not zone_selected:
                         page.keyboard.press("Escape")
                         page.wait_for_timeout(500)
