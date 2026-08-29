@@ -270,7 +270,7 @@ class GetWorkerToken:
                                  o.get('x',0), o.get('y',0), o.get('h',0))
                     for o in opt:
                         t = o.get('text', '')
-                        if email_prefix in t:
+                        if email_prefix.lower() in t.lower():
                             page.mouse.click(o['x'], o['y'])
                             account_selected = True
                             log.info("✓ Akun dipilih: %s", t[:40])
