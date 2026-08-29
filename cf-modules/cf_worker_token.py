@@ -171,71 +171,82 @@ class GetWorkerToken:
             pass
         page.wait_for_timeout(1000)
 
-        # Dari DOM dump: Cloudflare pakai <BUTTON aria-haspopup="listbox">
-        # Account Resources: 2 dropdown
-        # 1. "Include" (default)
-        # 2. Account selector: button dengan text "Select..." → popup listbox
+        # Dari DOM dump: dropdown Account Resources ada di posisi (476, 206)
+        # Itu <BUTTON aria-haspopup="listbox"> dengan text "Select..."
+        # Tapi .click() dan JS .click() tidak trigger React.
         #
-        # PENTING: Ada MULTIPLE button "Select..." di halaman (Permissions juga punya).
-        # Cara bedakan: Account Resources dropdown ADA setelah heading "Account Resources"
-        # dan SEBELUM heading "Zone Resources".
+        # SOLUSI: pakai page.mouse.click() di koordinat dropdown!
+        # Ini simulasi klik fisik mouse, PASTI trigger React.
 
         account_selected = False
 
-        # Cara 1: pakai page.evaluate (JS) untuk cari & klik dropdown
-        # yang ADA di section Account Resources (antara heading Account Resources
-        # dan Zone Resources)
+        # Cari posisi dropdown "Select..." di Account Resources via JS
         try:
-            # Cari index heading "Account Resources" dan "Zone Resources"
-            result = page.evaluate("""() => {
+            pos = page.evaluate("""() => {
                 const buttons = Array.from(
                     document.querySelectorAll('button[aria-haspopup="listbox"]')
                 );
-                // Cari button "Select..." yang ada SETELAH "Account Resources"
-                // dan SEBELUM "Zone Resources"
-                let foundAccount = false;
                 for (const btn of buttons) {
-                    const parent = btn.closest('div, section, fieldset, fieldset');
-                    const parentText = parent?.textContent || '';
-                    // Skip kalau parent mengandung "Zone Resources"
-                    if (parentText.includes('Zone Resources')) continue;
-                    // Skip kalau parent mengandung "Permissions" di atas
-                    if (parentText.includes('Permissions') && !parentText.includes('Account Resources')) continue;
-                    // Cek text button
                     if (btn.textContent.includes('Select...')) {
-                        // Klik dropdown
-                        btn.click();
-                        return 'clicked';
+                        // Cek parent: cari yang ada di Account Resources
+                        let parent = btn.parentElement;
+                        while (parent) {
+                            const txt = parent.textContent || '';
+                            if (txt.includes('Account Resources') &&
+                                !txt.includes('Zone Resources')) {
+                                const rect = btn.getBoundingClientRect();
+                                return {
+                                    x: rect.x + rect.width / 2,
+                                    y: rect.y + rect.height / 2,
+                                    text: btn.textContent.trim().slice(0, 30),
+                                };
+                            }
+                            parent = parent.parentElement;
+                        }
                     }
                 }
-                return 'not found';
+                return null;
             }""")
-            log.info("→ Account dropdown: %s", result)
-            page.wait_for_timeout(1500)
+            if pos:
+                log.info("→ Klik dropdown Account di (%.0f, %.0f): %s",
+                         pos['x'], pos['y'], pos['text'])
+                # Klik tengah dropdown dengan mouse fisik
+                page.mouse.click(pos['x'], pos['y'])
+                page.wait_for_timeout(2000)
 
-            if result == 'clicked':
                 # Pilih akun user (BUKAN "All accounts")
                 email_prefix = self.email.split("@")[0]
-                opt_result = page.evaluate(f"""() => {{
-                    const options = document.querySelectorAll('[role="option"], li, div');
+                opt_pos = page.evaluate(f"""() => {{
+                    const options = document.querySelectorAll(
+                        '[role="option"], li'
+                    );
                     for (const opt of options) {{
                         const txt = opt.textContent || '';
                         if (txt.includes('{email_prefix}') ||
                             (txt.includes("Account") && !txt.includes("All accounts"))) {{
-                            opt.click();
-                            return 'selected: ' + txt.slice(0, 40);
+                            const rect = opt.getBoundingClientRect();
+                            return {{
+                                x: rect.x + rect.width / 2,
+                                y: rect.y + rect.height / 2,
+                                text: txt.slice(0, 40),
+                            }};
                         }}
                     }}
-                    return 'no match';
+                    return null;
                 }}""")
-                if 'selected' in opt_result:
+                if opt_pos:
+                    log.info("→ Klik option akun di (%.0f, %.0f): %s",
+                             opt_pos['x'], opt_pos['y'], opt_pos['text'])
+                    page.mouse.click(opt_pos['x'], opt_pos['y'])
                     account_selected = True
-                    log.info("✓ Akun dipilih: %s", opt_result[:50])
+                    log.info("✓ Akun dipilih")
                 else:
-                    log.warning("⚠ Option akun tidak ditemukan: %s", opt_result)
+                    log.warning("⚠ Option akun tidak ditemukan")
                     page.keyboard.press("Escape")
+            else:
+                log.warning("⚠ Dropdown Account tidak ditemukan")
         except Exception as e:
-            log.warning("⚠ Account Resources: %s", str(e)[:80])
+            log.warning("⚠ Account Resources error: %s", str(e)[:100])
 
         if not account_selected:
             log.warning("⚠ Account Resources tidak terpilih otomatis")
@@ -245,7 +256,6 @@ class GetWorkerToken:
         # --- Step E: Zone Resources → ubah "Specific zone" ke "All zones" ---
         log.info("→ Setting Zone Resources (All zones)...")
 
-        # Scroll ke section "Zone Resources"
         try:
             loc = page.locator('text="Zone Resources"').first
             if loc.count() > 0:
@@ -254,53 +264,65 @@ class GetWorkerToken:
             pass
         page.wait_for_timeout(1000)
 
-        # Zone Resources: 3 dropdown
-        # 1. "Include" (default)
-        # 2. "Specific zone" → ubah ke "All zones"
-        # 3. "Select..." (disabled setelah pilih "All zones")
-
         zone_selected = False
+
+        # Cari posisi dropdown "Specific zone" di Zone Resources
         try:
-            # Cari button "Specific zone" di section Zone Resources
-            result = page.evaluate("""() => {
+            zpos = page.evaluate("""() => {
                 const buttons = Array.from(
                     document.querySelectorAll('button[aria-haspopup="listbox"]')
                 );
                 for (const btn of buttons) {
                     if (btn.textContent.includes('Specific zone')) {
-                        const parent = btn.closest('div, section, fieldset');
-                        const parentText = parent?.textContent || '';
-                        if (parentText.includes('Zone Resources')) {
-                            btn.click();
-                            return 'clicked';
+                        let parent = btn.parentElement;
+                        while (parent) {
+                            const txt = parent.textContent || '';
+                            if (txt.includes('Zone Resources')) {
+                                const rect = btn.getBoundingClientRect();
+                                return {
+                                    x: rect.x + rect.width / 2,
+                                    y: rect.y + rect.height / 2,
+                                };
+                            }
+                            parent = parent.parentElement;
                         }
                     }
                 }
-                return 'not found';
+                return null;
             }""")
-            log.info("→ Zone dropdown: %s", result)
-            page.wait_for_timeout(1500)
+            if zpos:
+                log.info("→ Klik dropdown Zone di (%.0f, %.0f)",
+                         zpos['x'], zpos['y'])
+                page.mouse.click(zpos['x'], zpos['y'])
+                page.wait_for_timeout(2000)
 
-            if result == 'clicked':
                 # Pilih "All zones"
-                opt_result = page.evaluate("""() => {
-                    const options = document.querySelectorAll('[role="option"], li, div');
+                zopt = page.evaluate("""() => {
+                    const options = document.querySelectorAll('[role="option"], li');
                     for (const opt of options) {
                         if (opt.textContent.includes('All zones')) {
-                            opt.click();
-                            return 'selected: All zones';
+                            const rect = opt.getBoundingClientRect();
+                            return {
+                                x: rect.x + rect.width / 2,
+                                y: rect.y + rect.height / 2,
+                            };
                         }
                     }
-                    return 'no match';
+                    return null;
                 }""")
-                if 'selected' in opt_result:
+                if zopt:
+                    log.info("→ Klik option 'All zones' di (%.0f, %.0f)",
+                             zopt['x'], zopt['y'])
+                    page.mouse.click(zopt['x'], zopt['y'])
                     zone_selected = True
                     log.info("✓ All zones dipilih")
                 else:
-                    log.warning("⚠ Option zone tidak ditemukan: %s", opt_result)
+                    log.warning("⚠ Option 'All zones' tidak ditemukan")
                     page.keyboard.press("Escape")
+            else:
+                log.warning("⚠ Dropdown Zone tidak ditemukan")
         except Exception as e:
-            log.warning("⚠ Zone Resources: %s", str(e)[:80])
+            log.warning("⚠ Zone Resources error: %s", str(e)[:100])
 
         if not zone_selected:
             log.warning("⚠ Zone Resources tidak terpilih otomatis")
