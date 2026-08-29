@@ -20,6 +20,7 @@ Aturan penting:
 """
 from __future__ import annotations
 import re
+import time
 import logging
 from typing import Optional
 
