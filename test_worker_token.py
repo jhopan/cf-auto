@@ -135,7 +135,13 @@ def main():
 
         # Run Module 5
         worker = GetWorkerToken(CF_EMAIL_USED)
-        token = worker.run(page)
+        try:
+            token = worker.run(page)
+        except Exception as e:
+            import traceback
+            log.error("✗ Exception in worker.run(): %s", str(e)[:100])
+            traceback.print_exc()
+            token = None
 
         if not token:
             log.error("✗ Gagal ambil Worker API Token")

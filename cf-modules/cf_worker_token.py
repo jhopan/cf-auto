@@ -73,8 +73,8 @@ class GetWorkerToken:
                 break
             except Exception as e:
                 log.warning("⚠ Navigasi gagal (attempt %d): %s", attempt + 1, str(e)[:60])
-                page.wait_for_timeout(3000)
-        page.wait_for_timeout(5000)
+                time.sleep(3.0)
+        time.sleep(5.0)
         dismiss_cookie_banner(page)
         log.info("  URL: %s", page.url)
 
@@ -103,7 +103,7 @@ class GetWorkerToken:
             }""")
             log.info("→ Klik Create Token via JS")
 
-        page.wait_for_timeout(3000)
+        time.sleep(3.0)
 
         # --- Step C: Cari template "Edit Cloudflare Workers" → klik "Use template" ---
         log.info("→ Cari template 'Edit Cloudflare Workers'...")
@@ -152,12 +152,10 @@ class GetWorkerToken:
         if not template_clicked:
             log.error("✗ Template 'Edit Cloudflare Workers' tidak ditemukan!")
 
-        try:
-            page.wait_for_timeout(5000)
-        except Exception:
-            pass
+        import time as _time
+        _time.sleep(5)
 
-        print(">>> DEBUG: before Step D", flush=True)
+        print(">>> STEP D START", flush=True)
         # --- Step D: Account Resources → pilih akun ---
         # Pendekatan: JS cari koordinat → page.mouse.click()
         log.info("→ Setting Account Resources...")
@@ -184,7 +182,7 @@ class GetWorkerToken:
             if pos:
                 log.info("→ Klik dropdown Account di (%.0f, %.0f)", pos['x'], pos['y'])
                 page.mouse.click(pos['x'], pos['y'])
-                page.wait_for_timeout(2000)
+                time.sleep(2.0)
 
                 email_prefix = self.email.split("@")[0]
                 opt = page.evaluate(f"""() => {{
@@ -211,7 +209,7 @@ class GetWorkerToken:
         except Exception as e:
             log.warning("⚠ Account error: %s", str(e)[:100])
 
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
 
         # --- Step E: Zone Resources → "Specific zone" → "All zones" ---
         log.info("→ Setting Zone Resources (All zones)...")
@@ -238,7 +236,7 @@ class GetWorkerToken:
             if zpos:
                 log.info("→ Klik dropdown Zone di (%.0f, %.0f)", zpos['x'], zpos['y'])
                 page.mouse.click(zpos['x'], zpos['y'])
-                page.wait_for_timeout(2000)
+                time.sleep(2.0)
 
                 zopt = page.evaluate("""() => {
                     const opts = document.querySelectorAll('[class*="react-select__option"], [role="option"]');
@@ -263,7 +261,7 @@ class GetWorkerToken:
         except Exception as e:
             log.warning("⚠ Zone error: %s", str(e)[:100])
 
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
 
         # --- Step F: Cek error merah ---
         try:
@@ -311,7 +309,7 @@ class GetWorkerToken:
         except Exception:
             pass
 
-        page.wait_for_timeout(1000)
+        time.sleep(1.0)
 
         # --- Step F: Klik "Continue to summary" ---
         log.info("→ Klik 'Continue to summary'...")
@@ -340,7 +338,7 @@ class GetWorkerToken:
             }""")
             log.info("→ Klik Continue via JS")
 
-        page.wait_for_timeout(3000)
+        time.sleep(3.0)
 
         # --- Step G: Klik "Create Token" ---
         log.info("→ Klik 'Create Token'...")
@@ -371,12 +369,12 @@ class GetWorkerToken:
 
         # --- Step H: Tunggu token muncul ---
         log.info("→ Menunggu token muncul...")
-        page.wait_for_timeout(5000)
+        time.sleep(5.0)
 
         token = None
         deadline = time.time() + 30
         while time.time() < deadline:
-            page.wait_for_timeout(1000)
+            time.sleep(1.0)
             token = self._extract_token(page)
             if token:
                 break
