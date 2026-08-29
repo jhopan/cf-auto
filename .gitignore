@@ -27,3 +27,6 @@ node_modules/
 Thumbs.db
 test_workers_ai_result.json
 test_worker_token_result.json
+config.json
+runner_result.json
+accounts.json

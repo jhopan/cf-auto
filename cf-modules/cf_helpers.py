@@ -39,13 +39,19 @@ API_TOKENS_URL = "https://dash.cloudflare.com/profile/api-tokens"
 # ---------------------------------------------------------------------------
 # Password
 # ---------------------------------------------------------------------------
-def random_password() -> str:
+def random_password(length: int = 14) -> str:
     """Password kuat yang memenuhi syarat Cloudflare."""
+    if length < 8:
+        length = 8
     upper = random.choices(string.ascii_uppercase, k=3)
-    lower = random.choices(string.ascii_lowercase, k=6)
+    lower = random.choices(string.ascii_lowercase, k=max(3, length // 2))
     digit = random.choices(string.digits, k=3)
     special = random.choices("!@#$%^&*", k=2)
     pwd = upper + lower + digit + special
+    # Tambah karakter acak sampai panjang yang diminta
+    all_chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    extra = max(0, length - len(pwd))
+    pwd += random.choices(all_chars, k=extra)
     random.shuffle(pwd)
     return "".join(pwd)
 
