@@ -162,51 +162,81 @@ class GetWorkerToken:
         except Exception:
             pass
 
+        print(">>> DEBUG: before Step D", flush=True)
         # --- Step D: Account Resources → pilih akun ---
-        # Cloudflare pakai react-select library
-        # Classes: react-select__placeholder, react-select__control,
-        #          react-select__option, react-select__single-value
         log.info("→ Setting Account Resources...")
         account_selected = False
 
-        # Klik react-select__control di section Account Resources
-        # cari berdasarkan parent yang mengandung "Account Resources"
+        # Pakai JS untuk cari & klik react-select control
+        # lalu cari option dan klik via page.mouse.click()
         try:
-            # Cari semua react-select control dengan text "Select..."
-            controls = page.locator('div.react-select__control:has-text("Select...")')
-            ctrl_count = controls.count()
-            log.info("→ react-select controls: %d", ctrl_count)
+            # Step 1: Klik control "Select..." di Account Resources
+            ctrl_pos = page.evaluate("""() => {
+                // Cari semua react-select control
+                const controls = document.querySelectorAll(
+                    'div[class*="react-select__control"], div[class*="control"]'
+                );
+                for (const ctrl of controls) {
+                    if (ctrl.textContent.includes('Select...')) {
+                        // Cek parent: Account Resources
+                        let p = ctrl;
+                        for (let j = 0; j < 15; j++) {
+                            p = p.parentElement;
+                            if (!p) break;
+                            const txt = p.textContent || '';
+                            if (txt.includes('Account Resources') &&
+                                !txt.includes('Zone Resources')) {
+                                const rect = ctrl.getBoundingClientRect();
+                                return {
+                                    x: rect.x + rect.width / 2,
+                                    y: rect.y + rect.height / 2,
+                                };
+                            }
+                        }
+                    }
+                }
+                return null;
+            }""")
+            if ctrl_pos:
+                log.info("→ Klik control Account di (%.0f, %.0f)", ctrl_pos['x'], ctrl_pos['y'])
+                page.mouse.click(ctrl_pos['x'], ctrl_pos['y'])
+                page.wait_for_timeout(2000)
 
-            for i in range(ctrl_count):
-                # Cek apakah control ini di Account Resources
-                check = controls.nth(i).evaluate(
-                    "el => { let p=el; for(let j=0;j<15;j++){p=p.parentElement; if(!p)return ''; if(p.textContent.includes('Account Resources')&&!p.textContent.includes('Zone Resources'))return 'yes';} return ''; }"
-                )
-                if check == 'yes':
-                    log.info("→ Klik control Account (index %d)", i)
-                    controls.nth(i).click(force=True, timeout=5000)
-                    page.wait_for_timeout(2000)
-
-                    # Pilih akun — cari option yang berisi email
-                    email_prefix = self.email.split("@")[0]
-                    # react-select option classes: react-select__option
-                    opts = page.locator('div.react-select__option, [role="option"]')
-                    opt_count = opts.count()
-                    log.info("→ Options: %d", opt_count)
-                    for j in range(opt_count):
-                        txt = opts.nth(j).text_content() or ""
-                        log.info("  opt[%d]: '%s'", j, txt.strip()[:50])
-                        if email_prefix in txt or ("Account" in txt and "All accounts" not in txt):
-                            opts.nth(j).click(timeout=5000)
-                            account_selected = True
-                            log.info("✓ Akun dipilih: %s", txt.strip()[:50])
-                            break
-
-                    if not account_selected:
-                        log.warning("⚠ Option akun tidak ditemukan")
-                        page.keyboard.press("Escape")
-                        page.wait_for_timeout(500)
-                    break
+                # Step 2: Cari option yang berisi email akun
+                email_prefix = self.email.split("@")[0]
+                opt_pos = page.evaluate(f"""() => {{
+                    // Cari semua option di menu yang terbuka
+                    const opts = document.querySelectorAll(
+                        'div[class*="react-select__option"], [role="option"], li'
+                    );
+                    for (const opt of opts) {{
+                        const txt = opt.textContent || '';
+                        if (txt.includes('{email_prefix}') ||
+                            (txt.includes("Account") && !txt.includes("All accounts"))) {{
+                            const rect = opt.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {{
+                                return {{
+                                    x: rect.x + rect.width / 2,
+                                    y: rect.y + rect.height / 2,
+                                    text: txt.trim().slice(0, 50),
+                                }};
+                            }}
+                        }}
+                    }}
+                    return null;
+                }}""")
+                if opt_pos:
+                    log.info("→ Klik option akun di (%.0f, %.0f): %s",
+                             opt_pos['x'], opt_pos['y'], opt_pos['text'])
+                    page.mouse.click(opt_pos['x'], opt_pos['y'])
+                    account_selected = True
+                    log.info("✓ Akun dipilih")
+                else:
+                    log.warning("⚠ Option akun tidak ditemukan di menu")
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(500)
+            else:
+                log.warning("⚠ Control Account tidak ditemukan")
         except Exception as e:
             log.warning("⚠ Account error: %s", str(e)[:100])
 
@@ -220,37 +250,64 @@ class GetWorkerToken:
         zone_selected = False
 
         try:
-            # Cari react-select control dengan text "Specific zone"
-            controls = page.locator('div.react-select__control:has-text("Specific zone")')
-            ctrl_count = controls.count()
-            log.info("→ Zone controls: %d", ctrl_count)
+            # Step 1: Klik control "Specific zone" di Zone Resources
+            zctrl_pos = page.evaluate("""() => {
+                const controls = document.querySelectorAll(
+                    'div[class*="react-select__control"], div[class*="control"]'
+                );
+                for (const ctrl of controls) {
+                    if (ctrl.textContent.includes('Specific zone')) {
+                        let p = ctrl;
+                        for (let j = 0; j < 15; j++) {
+                            p = p.parentElement;
+                            if (!p) break;
+                            if (p.textContent.includes('Zone Resources')) {
+                                const rect = ctrl.getBoundingClientRect();
+                                return {
+                                    x: rect.x + rect.width / 2,
+                                    y: rect.y + rect.height / 2,
+                                };
+                            }
+                        }
+                    }
+                }
+                return null;
+            }""")
+            if zctrl_pos:
+                log.info("→ Klik control Zone di (%.0f, %.0f)", zctrl_pos['x'], zctrl_pos['y'])
+                page.mouse.click(zctrl_pos['x'], zctrl_pos['y'])
+                page.wait_for_timeout(2000)
 
-            for i in range(ctrl_count):
-                check = controls.nth(i).evaluate(
-                    "el => { let p=el; for(let j=0;j<15;j++){p=p.parentElement; if(!p)return ''; if(p.textContent.includes('Zone Resources'))return 'yes';} return ''; }"
-                )
-                if check == 'yes':
-                    log.info("→ Klik control Zone (index %d)", i)
-                    controls.nth(i).click(force=True, timeout=5000)
-                    page.wait_for_timeout(2000)
-
-                    # Pilih "All zones"
-                    opts = page.locator('div.react-select__option, [role="option"]')
-                    opt_count = opts.count()
-                    log.info("→ Zone options: %d", opt_count)
-                    for j in range(opt_count):
-                        txt = opts.nth(j).text_content() or ""
-                        log.info("  zopt[%d]: '%s'", j, txt.strip()[:50])
-                        if "All zones" in txt:
-                            opts.nth(j).click(timeout=5000)
-                            zone_selected = True
-                            log.info("✓ All zones dipilih")
-                            break
-
-                    if not zone_selected:
-                        page.keyboard.press("Escape")
-                        page.wait_for_timeout(500)
-                    break
+                # Step 2: Cari option "All zones"
+                zopt_pos = page.evaluate("""() => {
+                    const opts = document.querySelectorAll(
+                        'div[class*="react-select__option"], [role="option"], li'
+                    );
+                    for (const opt of opts) {
+                        if (opt.textContent.includes('All zones')) {
+                            const rect = opt.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                return {
+                                    x: rect.x + rect.width / 2,
+                                    y: rect.y + rect.height / 2,
+                                };
+                            }
+                        }
+                    }
+                    return null;
+                }""")
+                if zopt_pos:
+                    log.info("→ Klik option 'All zones' di (%.0f, %.0f)",
+                             zopt_pos['x'], zopt_pos['y'])
+                    page.mouse.click(zopt_pos['x'], zopt_pos['y'])
+                    zone_selected = True
+                    log.info("✓ All zones dipilih")
+                else:
+                    log.warning("⚠ Option 'All zones' tidak ditemukan")
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(500)
+            else:
+                log.warning("⚠ Control Zone tidak ditemukan")
         except Exception as e:
             log.warning("⚠ Zone error: %s", str(e)[:100])
 
