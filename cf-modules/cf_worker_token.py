@@ -186,41 +186,47 @@ class GetWorkerToken:
 
                 email_prefix = self.email.split("@")[0]
                 opt = page.evaluate(f"""() => {{
-                    // Dump semua element yang ada di menu dropdown
+                    // Cari element yang text-nya PERSIS match (direct text, bukan child)
                     const all = document.querySelectorAll('*');
                     const results = [];
                     for (const o of all) {{
+                        // Hanya cek direct text content (child = 0 atau br)
+                        const directText = Array.from(o.childNodes)
+                            .filter(n => n.nodeType === 3)
+                            .map(n => n.textContent.trim())
+                            .join('');
                         const t = (o.textContent || '').trim();
-                        if (t.length > 0 && t.length < 100) {{
-                            if (t.includes('{email_prefix}') ||
-                                t.includes('All accounts') ||
-                                t.includes('Account')) {{
-                                const r = o.getBoundingClientRect();
-                                if (r.width > 0 && r.height > 0) {{
-                                    results.push({{
-                                        tag: o.tagName,
-                                        cls: (o.className||'').toString().slice(0,40),
-                                        text: t.slice(0,50),
-                                        x: r.x + r.width/2,
-                                        y: r.y + r.height/2,
-                                        w: r.width,
-                                    }});
-                                }}
+                        // Cek kalau text-nya persis "All accounts" atau mengandung email
+                        if ((directText === 'All accounts' ||
+                             t.includes('{email_prefix}')) &&
+                            t.length > 0 && t.length < 100) {{
+                            const r = o.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0 && r.height < 50) {{
+                                results.push({{
+                                    tag: o.tagName,
+                                    text: t.slice(0,50),
+                                    x: r.x + r.width/2, y: r.y + r.height/2,
+                                }});
                             }}
                         }}
                     }}
-                    return results.slice(0, 10);
+                    // Deduplicate by text
+                    const seen = new Set();
+                    return results.filter(r => {{
+                        if (seen.has(r.text)) return false;
+                        seen.add(r.text);
+                        return true;
+                    }}).slice(0, 10);
                 }}""")
                 if opt:
-                    log.info("→ Elements found: %d", len(opt))
+                    log.info("→ Options found: %d", len(opt))
                     for o in opt:
-                        log.info("  <%s> '%s' pos=(%.0f,%.0f) w=%.0f",
-                                 o.get('tag',''), o.get('text','')[:30],
-                                 o.get('x',0), o.get('y',0), o.get('w',0))
-                    # Pilih yang berisi email
+                        log.info("  <%s> '%s' pos=(%.0f,%.0f)",
+                                 o.get('tag',''), o.get('text','')[:40],
+                                 o.get('x',0), o.get('y',0))
                     for o in opt:
                         t = o.get('text', '')
-                        if email_prefix in t or ("Account" in t and "All accounts" not in t):
+                        if email_prefix in t:
                             page.mouse.click(o['x'], o['y'])
                             account_selected = True
                             log.info("✓ Akun dipilih: %s", t[:40])
@@ -266,25 +272,29 @@ class GetWorkerToken:
                     const all = document.querySelectorAll('*');
                     const results = [];
                     for (const o of all) {
-                        const t = (o.textContent || '').trim();
-                        if (t.length > 0 && t.length < 50) {
-                            if (t.includes('All zones') || t.includes('zone')) {
-                                const r = o.getBoundingClientRect();
-                                if (r.width > 0 && r.height > 0) {
-                                    results.push({
-                                        tag: o.tagName,
-                                        cls: (o.className||'').toString().slice(0,40),
-                                        text: t.slice(0,40),
-                                        x: r.x + r.width/2, y: r.y + r.height/2,
-                                    });
-                                }
+                        const directText = Array.from(o.childNodes)
+                            .filter(n => n.nodeType === 3)
+                            .map(n => n.textContent.trim())
+                            .join('');
+                        if (directText === 'All zones') {
+                            const r = o.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0 && r.height < 50) {
+                                results.push({
+                                    tag: o.tagName,
+                                    text: directText,
+                                    x: r.x + r.width/2, y: r.y + r.height/2,
+                                });
                             }
                         }
                     }
-                    return results.slice(0, 10);
+                    const seen = new Set();
+                    return results.filter(r => {
+                        if (seen.has(r.text)) return false;
+                        seen.add(r.text); return true;
+                    }).slice(0, 5);
                 }""")
                 if zopt:
-                    log.info("→ Zone elements: %d", len(zopt))
+                    log.info("→ Zone options: %d", len(zopt))
                     for o in zopt:
                         log.info("  <%s> '%s' pos=(%.0f,%.0f)",
                                  o.get('tag',''), o.get('text','')[:30],
