@@ -169,9 +169,13 @@ def create_one(cfg: dict, args, idx: int):
             log.error("✗ Signup gagal, stop akun ini.")
             return
 
+        time.sleep(3)  # jeda antar module
+
         # Module 2: Konfirmasi email
         confirm = ConfirmEmail(cf_email, cf_password, mail)
         confirm.run(page, account_id)
+
+        time.sleep(3)  # jeda antar module
 
         # Module 3: Global API Key
         apikey = GetApiKey(cf_email, cf_password, mail)
@@ -180,12 +184,16 @@ def create_one(cfg: dict, args, idx: int):
             log.error("✗ Gagal ambil API Key, stop akun ini.")
             return
 
+        time.sleep(3)  # jeda antar module
+
         # Module 4: Workers AI API Token
         workers_ai = GetWorkersAiToken(account_id)
         workers_ai_token = workers_ai.run(page)
         if not workers_ai_token:
             log.error("✗ Gagal ambil Workers AI API Token, stop akun ini.")
             return
+
+        time.sleep(3)  # jeda antar module
 
         # Module 5: Worker API Token
         worker_tok = GetWorkerToken(cf_email)
@@ -194,7 +202,7 @@ def create_one(cfg: dict, args, idx: int):
             log.error("✗ Gagal ambil Worker API Token, stop akun ini.")
             return
 
-    # Simpan hasil (append, dedup, JSON + CSV)
+    # Simpan hasil (append, dedup, JSON + CSV + workers_ai.txt)
     account = {
         "email": cf_email,
         "password": cf_password,
@@ -205,6 +213,12 @@ def create_one(cfg: dict, args, idx: int):
     }
     res = append_account(cfg, account)
 
+    # Path file output
+    stor = cfg.get("storage", {})
+    json_file = stor.get("accounts_file", "accounts.json")
+    csv_file = stor.get("csv_file", "accounts.csv")
+    wai_file = stor.get("workers_ai_file", "workers_ai.txt")
+
     log.info("═══ Akun #%d SELESAI ═══", idx + 1)
     log.info("  Email         : %s", cf_email)
     log.info("  Global API Key: %s", api_key[:8] + "..." + api_key[-4:])
@@ -213,7 +227,9 @@ def create_one(cfg: dict, args, idx: int):
     log.info("  Account ID    : %s", account_id)
     log.info("  Disimpan      : %s", res["reason"])
     if res["added"]:
-        log.info("  → Ditambahkan ke accounts.json + accounts.csv")
+        log.info("  → %s", json_file)
+        log.info("  → %s", csv_file)
+        log.info("  → %s (format: name|apiKey|accountId)", wai_file)
     else:
         log.info("  → Skip (sudah ada): %s", res["reason"])
 

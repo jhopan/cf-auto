@@ -31,3 +31,6 @@ config.json
 runner_result.json
 accounts.json
 workers_ai.txt
+accounts.csv
+workers_ai.txt
+accounts.json

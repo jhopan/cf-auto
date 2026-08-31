@@ -250,14 +250,25 @@ class ConfirmEmail:
         time.sleep(5.0)
         log.info("  URL setelah verify: %s", page.url)
 
-        # Cek status verifikasi
+        # --- Step F: Verifikasi dengan buka workers-and-pages lagi ---
+        # Jika halaman workers-and-pages tidak minta verifikasi lagi,
+        # artinya email sudah terverifikasi
+        log.info("→ Cek verifikasi: buka workers-and-pages...")
+        workers_url = f"https://dash.cloudflare.com/{account_id}/workers-and-pages"
+        page.goto(workers_url, wait_until="domcontentloaded", timeout=60000)
+        time.sleep(5.0)
+
         try:
             body_text = page.inner_text("body")
-            if "verified" in body_text.lower() or "success" in body_text.lower():
-                log.info("✓✓✓ VERIFIKASI BERHASIL! ✓✓✓")
+            body_lower = body_text.lower()
+            # Kalau tidak ada "verify your email" atau "action required",
+            # dan halaman workers-and-pages normal → verifikasi berhasil
+            if "verify your email" in body_lower or "action required" in body_lower:
+                log.warning("⚠ Email belum terverifikasi - masih diminta verifikasi")
+                return False
             else:
-                log.warning("⚠ Status verifikasi tidak diketahui")
+                log.info("✓✓✓ VERIFIKASI BERHASIL! (workers-and-pages normal) ✓✓✓")
         except Exception:
-            pass
+            log.warning("⚠ Tidak bisa cek status verifikasi")
 
         return True
