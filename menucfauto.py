@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from cf_config import load_config, save_config, load_accounts
+from cf_config import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
 
 CLEAR = "cls" if os.name == "nt" else "clear"
 
@@ -155,34 +155,79 @@ def menu_naming(cfg):
     tm = cfg["temp_mail"]
     print("  Mode penamaan:")
     print("    format   = pakai template (placeholder)")
-    print("    wordlist = baca dari file (1 baris = 1 username)")
+    print("    wordlist = baca dari CSV (1 baris = 1 nama, auto-tandai used)")
     mode = ask("Mode (format/wordlist)", tm.get("naming_mode", "format")).lower()
     tm["naming_mode"] = mode
 
     if mode == "wordlist":
-        wl = ask("File wordlist (path)", tm.get("wordlist_file", ""))
+        wl = ask("File wordlist CSV", tm.get("wordlist_file", "wordlist.csv"))
         tm["wordlist_file"] = wl
-        # Cek file ada
+        # Validasi & tampilkan stats
         wl_path = wl
         if wl_path and not os.path.isabs(wl_path):
             wl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), wl_path)
         if wl and os.path.exists(wl_path):
-            with open(wl_path, "r", encoding="utf-8") as f:
-                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-            print(f"  ✅ Wordlist dimuat: {len(lines)} baris")
-            if lines:
-                print(f"     Baris pertama: {lines[0]}")
-                print(f"     Baris terakhir: {lines[-1]}")
+            stats = wordlist_stats(cfg)
+            print(f"  📊 Wordlist: {stats['total']} total, {stats['used']} used, {stats['available']} available")
+            if stats["available"] == 0:
+                print("  ⚠ Semua nama sudah dipakai! Reset status atau tambah nama baru.")
         else:
             print(f"  ⚠ File tidak ditemukan: {wl_path}")
-        # Reset index kalau ganti file
-        tm["wordlist_index"] = 0
+            print("  💡 Buat file CSV dengan header: nomor,nama,status")
     else:
         print("  Format username (placeholder: {prefix} {rand8} {rand6} {randnum})")
         tm["email_format"] = ask("email_format", tm.get("email_format", "{prefix}{rand8}"))
 
     save_config(cfg)
     print("  ✅ Config penamaan disimpan.")
+
+    # Sub-menu wordlist
+    if mode == "wordlist":
+        while True:
+            print()
+            print("  WORDLIST SUB-MENU")
+            divider()
+            print("  1. Lihat statistik wordlist")
+            print("  2. Lihat semua nama")
+            print("  3. Reset status (semua jadi available)")
+            print("  4. Kembali ke menu utama")
+            sub = input("  Pilih [1-4]: ").strip()
+            if sub == "1":
+                stats = wordlist_stats(cfg)
+                print(f"  Total: {stats['total']} | Used: {stats['used']} | Available: {stats['available']}")
+            elif sub == "2":
+                _show_wordlist(cfg)
+            elif sub == "3":
+                n = wordlist_reset(cfg)
+                print(f"  ✅ {n} nama di-reset menjadi available.")
+            elif sub == "4":
+                break
+            else:
+                print("  ❌ Pilihan tidak valid.")
+
+
+def _show_wordlist(cfg):
+    """Tampilkan isi wordlist CSV."""
+    import csv as _csv
+    tm = cfg["temp_mail"]
+    wl_path = tm.get("wordlist_file", "")
+    if not wl_path:
+        print("  ⚠ wordlist_file belum di-set")
+        return
+    if not os.path.isabs(wl_path):
+        wl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), wl_path)
+    if not os.path.exists(wl_path):
+        print(f"  ⚠ File tidak ada: {wl_path}")
+        return
+    print(f"  {'No':<5} {'Nama':<20} {'Status':<10}")
+    print(f"  {'---':<5} {'----':<20} {'------':<10}")
+    with open(wl_path, "r", encoding="utf-8", newline="") as f:
+        reader = _csv.DictReader(f)
+        for row in reader:
+            nomor = row.get("nomor", "")
+            nama = row.get("nama", "")
+            status = row.get("status", "") or "(available)"
+            print(f"  {nomor:<5} {nama:<20} {status:<10}")
 
 
 def menu_storage(cfg):

@@ -107,10 +107,8 @@ def generate_username(cfg: dict) -> str:
 
     Mode:
       - 'format'  : pakai email_format dengan placeholder {prefix} {rand8} {rand6} {randnum}
-      - 'wordlist': baca baris berikutnya dari file wordlist, lalu simpan index
+      - 'wordlist': baca dari CSV wordlist, cari baris status kosong, tandai 'used'
     """
-    import json as _json
-
     tm = cfg["temp_mail"]
     mode = tm.get("naming_mode", "format")
 
@@ -125,22 +123,40 @@ def generate_username(cfg: dict) -> str:
         if not os.path.exists(wl_path):
             raise RuntimeError(f"file wordlist tidak ada: {wl_path}")
 
-        # Baca semua baris, skip kosong & komentar
-        with open(wl_path, "r", encoding="utf-8") as f:
-            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        # Baca CSV wordlist
+        rows = []
+        with open(wl_path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
 
-        if not lines:
+        if not rows:
             raise RuntimeError("wordlist kosong")
 
-        idx = tm.get("wordlist_index", 0)
-        if idx >= len(lines):
-            idx = 0  # reset kalau sudah habis
+        # Cari baris pertama yang status-nya kosong (belum dipakai)
+        chosen_idx = None
+        for i, row in enumerate(rows):
+            status = (row.get("status") or "").strip().lower()
+            if status == "" or status == "available":
+                chosen_idx = i
+                break
 
-        username = lines[idx]
+        if chosen_idx is None:
+            raise RuntimeError("Semua nama di wordlist sudah dipakai (used). Tambah nama baru atau reset status.")
 
-        # Update index untuk akun berikutnya
-        tm["wordlist_index"] = idx + 1
-        save_config(cfg)
+        username = (rows[chosen_idx].get("nama") or "").strip()
+        if not username:
+            raise RuntimeError(f"nama kosong di baris {chosen_idx + 1}")
+
+        # Tandai baris sebagai 'used'
+        rows[chosen_idx]["status"] = "used"
+
+        # Tulis ulang CSV dengan status updated
+        fieldnames = list(rows[0].keys())
+        with open(wl_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
 
         return username
 
@@ -156,6 +172,68 @@ def generate_username(cfg: dict) -> str:
     out = out.replace("{rand6}", rand6)
     out = out.replace("{randnum}", randnum)
     return out
+
+
+def wordlist_stats(cfg: dict) -> dict:
+    """Baca wordlist CSV, return statistik: total, used, available."""
+    tm = cfg.get("temp_mail", {})
+    wl_path = tm.get("wordlist_file", "")
+    if not wl_path:
+        return {"total": 0, "used": 0, "available": 0, "error": "wordlist_file kosong"}
+
+    if not os.path.isabs(wl_path):
+        wl_path = os.path.join(_BASE, wl_path)
+
+    if not os.path.exists(wl_path):
+        return {"total": 0, "used": 0, "available": 0, "error": f"file tidak ada: {wl_path}"}
+
+    total = 0
+    used = 0
+    available = 0
+    with open(wl_path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            nama = (row.get("nama") or "").strip()
+            if not nama:
+                continue
+            total += 1
+            status = (row.get("status") or "").strip().lower()
+            if status == "used":
+                used += 1
+            else:
+                available += 1
+
+    return {"total": total, "used": used, "available": available}
+
+
+def wordlist_reset(cfg: dict) -> int:
+    """Reset semua status wordlist menjadi kosong. Return jumlah yang di-reset."""
+    tm = cfg.get("temp_mail", {})
+    wl_path = tm.get("wordlist_file", "")
+    if not wl_path:
+        return 0
+    if not os.path.isabs(wl_path):
+        wl_path = os.path.join(_BASE, wl_path)
+    if not os.path.exists(wl_path):
+        return 0
+
+    count = 0
+    rows = []
+    with open(wl_path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        for row in reader:
+            if (row.get("status") or "").strip().lower() == "used":
+                row["status"] = ""
+                count += 1
+            rows.append(row)
+
+    with open(wl_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    return count
 
 
 # ---------------------------------------------------------------------------
