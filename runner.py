@@ -74,7 +74,7 @@ class TempMailAdapter:
                     json={"username": username, "domain": domain},
                     timeout=20,
                 )
-                if r.status_code == 200:
+                if r.status_code in (200, 201):
                     return r.json()["email"]
             except Exception as e:
                 log.warning("⚠ Gagal buat inbox di %s: %s", domain, str(e)[:60])
