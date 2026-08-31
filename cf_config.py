@@ -142,7 +142,10 @@ def generate_username(cfg: dict) -> str:
                 break
 
         if chosen_idx is None:
-            raise RuntimeError("Semua nama di wordlist sudah dipakai (used). Tambah nama baru atau reset status.")
+            # Semua nama sudah dipakai → fallback ke random format
+            prefix = tm.get("prefix", "cf")
+            rand8 = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+            return f"{prefix}{rand8}"
 
         username = (rows[chosen_idx].get("nama") or "").strip()
         if not username:

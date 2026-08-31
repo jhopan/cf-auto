@@ -253,15 +253,51 @@ def menu_storage(cfg):
 
 
 def menu_run(cfg):
-    print("\n  JALANKAN RUNNER")
+    """Menu jalankan runner dengan opsi jumlah akun."""
+    print("\n  🚀 JALANKAN RUNNER")
     divider()
-    mode = cf_password_mode(cfg)
-    print(f"  Akan buat 1 akun, password mode: {mode}")
+    print("  Pilih mode:")
+    print("    1. Jalankan 1 akun")
+    print("    2. Jalankan multiple akun (input jumlah)")
+    print("    3. Jalankan sampai wordlist habis")
+    print("    4. Kembali")
+    sub = input("  Pilih [1-4]: ").strip()
+
+    count = 0
+    if sub == "1":
+        count = 1
+    elif sub == "2":
+        count = ask_int("Jumlah akun", 1, min_v=1, max_v=1000)
+    elif sub == "3":
+        # Hitung dari wordlist available
+        stats = wordlist_stats(cfg)
+        count = stats["available"]
+        if count == 0:
+            print("  ⚠ Wordlist habis (0 available). Reset dulu atau pakai mode random.")
+            return
+        print(f"  📊 Wordlist: {count} nama available.")
+    else:
+        return
+
+    if count <= 0:
+        print("  ⚠ Jumlah tidak valid.")
+        return
+
+    print(f"\n  Akan membuat {count} akun.")
+    print(f"  Mode penamaan: {cfg['temp_mail'].get('naming_mode', 'format')}")
     if not ask_bool("Lanjutkan?", True):
         return
-    from runner import main as runner_main
-    # runner baca config sendiri dari config.json (sudah disimpan)
-    runner_main()
+
+    # Panggil runner dengan --count
+    import subprocess
+    python = sys.executable
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner.py")
+    cmd = [python, "-B", script, "--count", str(count)]
+    print(f"  Menjalankan: {' '.join(cmd)}")
+    print()
+    subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)))
+    print()
+    input("  Tekan Enter untuk kembali...")
 
 
 def cf_password_mode(cfg):
@@ -275,6 +311,15 @@ def main():
         divider()
         print("       MENU CFAUTO")
         divider()
+        # Tampilkan status singkat
+        nm = cfg["temp_mail"].get("naming_mode", "format")
+        if nm == "wordlist":
+            stats = wordlist_stats(cfg)
+            status_str = f"wordlist: {stats['available']}/{stats['total']} available"
+        else:
+            status_str = f"format: {cfg['temp_mail'].get('email_format', '{prefix}{rand8}')}"
+        print(f"  Mode: {nm} | {status_str}")
+        divider()
         print("  1. Lihat config sekarang")
         print("  2. Atur Temp Mail (endpoint/domain/key)")
         print("  3. Atur Password")
@@ -282,7 +327,7 @@ def main():
         print("  5. Atur Penamaan Email (format/wordlist)")
         print("  6. Atur Storage (file akun)")
         print("  7. Lihat akun tersimpan")
-        print("  8. Jalankan runner.py (1 akun)")
+        print("  8. Jalankan runner (1/multi/wordlist)")
         print("  9. Keluar")
         divider()
         choice = input("  Pilih [1-9]: ").strip()
