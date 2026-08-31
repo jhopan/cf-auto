@@ -1,8 +1,13 @@
 """
 cf_config.py — Helper untuk load/save config.json dan accounts.json.
 
-Mendukung penyimpanan ganda JSON + CSV, dedup berdasarkan field, dan
-aturan pembuatan nama email (email_format).
+Mendukung 3 format output:
+  1. accounts.json  — semua field (JSON, dedup, append)
+  2. workers_ai.txt — format name|apiKey|accountId (1 baris per akun, dedup, append)
+  3. accounts.csv   — semua field sebagai kolom (CSV, dedup, append)
+
+Dedup: cek field dedupe_field (default email) di SEMUA 3 file.
+Kalau sudah ada di salah satu → skip di semua.
 
 Config diatur via menucfauto.py. Runner membaca config ini saat start.
 """
@@ -14,7 +19,6 @@ import string
 from datetime import datetime
 from typing import Optional
 
-# Path relatif ke folder project (script biasa, bukan package)
 _BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_BASE, "config.json")
 
@@ -31,13 +35,15 @@ DEFAULTS = {
     "storage": {
         "accounts_file": "accounts.json",
         "csv_file": "accounts.csv",
+        "workers_ai_file": "workers_ai.txt",
+        "workers_ai_format": "{name}|{apiKey}|{accountId}",
         "csv_enabled": True,
+        "workers_ai_enabled": True,
         "append": True,
         "dedupe_field": "email",
     },
 }
 
-# Kolom tetap urutan CSV
 CSV_COLUMNS = [
     "email", "password", "account_id",
     "global_api_key", "workers_ai_token", "worker_api_token",
@@ -85,6 +91,10 @@ def _csv_path(cfg: dict) -> str:
     return _path(cfg, "csv_file", "accounts.csv")
 
 
+def _wai_path(cfg: dict) -> str:
+    return _path(cfg, "workers_ai_file", "workers_ai.txt")
+
+
 # ---------------------------------------------------------------------------
 # Email format
 # ---------------------------------------------------------------------------
@@ -93,7 +103,6 @@ def generate_username(cfg: dict) -> str:
     tm = cfg["temp_mail"]
     fmt = tm.get("email_format", "{prefix}{rand8}")
     prefix = tm.get("prefix", "cf")
-    # Placeholder yang didukung
     rand8 = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
     rand6 = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
     randnum = "".join(random.choices(string.digits, k=6))
@@ -106,7 +115,102 @@ def generate_username(cfg: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Accounts: JSON + CSV (dedup + append)
+# Dedup: cek SEMUA 3 file
+# ---------------------------------------------------------------------------
+def _existing_values_json(cfg: dict, field: str) -> set:
+    """Baca nilai field dari JSON."""
+    vals = set()
+    for a in load_accounts(cfg):
+        v = a.get(field)
+        if v:
+            vals.add(v)
+    return vals
+
+
+def _existing_values_csv(cfg: dict, field: str) -> set:
+    """Baca nilai field dari CSV."""
+    path = _csv_path(cfg)
+    vals = set()
+    if not os.path.exists(path):
+        return vals
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                v = row.get(field)
+                if v:
+                    vals.add(v)
+    except Exception:
+        pass
+    return vals
+
+
+def _existing_values_wai(cfg: dict, field: str) -> set:
+    """Baca nilai field dari workers_ai.txt.
+
+    Format: name|apiKey|accountId
+    field 'email' tidak ada langsung, tapi 'name' = prefix email.
+    Jadi untuk dedup email, kita cek apakah name (baris pertama) cocok
+    dengan prefix email akun baru.
+    """
+    path = _wai_path(cfg)
+    vals = set()
+    if not os.path.exists(path):
+        return vals
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("|")
+                if not parts:
+                    continue
+                # name = parts[0], apiKey = parts[1], accountId = parts[2]
+                # Untuk dedup email: kita simpan name (prefix email)
+                # dan nanti cek apakah email baru dimulai dengan name yang sudah ada
+                if field == "email":
+                    vals.add(parts[0])  # simpan name sebagai prefix
+                elif field == "account_id" and len(parts) >= 3:
+                    vals.add(parts[2])
+                elif field == "workers_ai_token" and len(parts) >= 2:
+                    vals.add(parts[1])
+    except Exception:
+        pass
+    return vals
+
+
+def _is_duplicate(cfg: dict, account: dict) -> bool:
+    """Cek apakah akun sudah ada di salah satu dari 3 file."""
+    field = cfg.get("storage", {}).get("dedupe_field", "email")
+    val = account.get(field)
+    if not val:
+        return False
+
+    # Cek JSON
+    if val in _existing_values_json(cfg, field):
+        return True
+
+    # Cek CSV
+    if val in _existing_values_csv(cfg, field):
+        return True
+
+    # Cek workers_ai.txt
+    # Untuk email: name = prefix sebelum @
+    if field == "email":
+        name = val.split("@")[0] if "@" in val else val
+        existing_names = _existing_values_wai(cfg, "email")
+        if name in existing_names:
+            return True
+    else:
+        if val in _existing_values_wai(cfg, field):
+            return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Load accounts (JSON)
 # ---------------------------------------------------------------------------
 def load_accounts(cfg: dict) -> list:
     path = _accounts_path(cfg)
@@ -120,49 +224,70 @@ def load_accounts(cfg: dict) -> list:
             return []
 
 
-def _existing_emails(cfg: dict) -> set:
-    emails = set()
-    for a in load_accounts(cfg):
-        if a.get("email"):
-            emails.add(a["email"])
-    return emails
+# ---------------------------------------------------------------------------
+# Append: tulis ke SEMUA 3 file (dedup + append)
+# ---------------------------------------------------------------------------
+def _append_json(cfg: dict, account: dict) -> None:
+    """Append ke accounts.json."""
+    accounts = load_accounts(cfg)
+    accounts.append(account)
+    with open(_accounts_path(cfg), "w", encoding="utf-8") as f:
+        json.dump(accounts, f, indent=2, ensure_ascii=False)
 
 
-def _read_csv_emails(cfg: dict) -> set:
-    """Baca email yang sudah ada di CSV (untuk dedup)."""
+def _append_csv(cfg: dict, account: dict) -> None:
+    """Append ke accounts.csv (dengan header, dedup, tidak hapus lama)."""
     path = _csv_path(cfg)
-    emails = set()
-    if not os.path.exists(path):
-        return emails
-    try:
+    row = {c: account.get(c, "") for c in CSV_COLUMNS}
+
+    if os.path.exists(path):
+        # Baca yang ada, tambah baris baru
         with open(path, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                if row.get("email"):
-                    emails.add(row["email"])
-    except Exception:
-        pass
-    return emails
+            rows = list(reader)
+        rows.append(row)
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        # File baru: tulis header + 1 baris
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerow(row)
 
 
-def _write_csv(path: str, accounts: list) -> None:
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
-        writer.writeheader()
-        for a in accounts:
-            writer.writerow({c: a.get(c, "") for c in CSV_COLUMNS})
+def _append_wai(cfg: dict, account: dict) -> None:
+    """Append ke workers_ai.txt (format name|apiKey|accountId, 1 baris, no header)."""
+    path = _wai_path(cfg)
+    fmt = cfg.get("storage", {}).get("workers_ai_format", "{name}|{apiKey}|{accountId}")
+
+    # Isi placeholder
+    email = account.get("email", "")
+    name = email.split("@")[0] if "@" in email else email
+    line = fmt
+    line = line.replace("{name}", name)
+    line = line.replace("{apiKey}", account.get("workers_ai_token", ""))
+    line = line.replace("{accountId}", account.get("account_id", ""))
+
+    # Append (tambah baris di akhir, tidak hapus lama)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 def append_account(cfg: dict, account: dict) -> dict:
     """
-    Append satu akun ke JSON + CSV dengan dedup (tidak boleh duplikat).
+    Append satu akun ke SEMUA 3 file (JSON + CSV + workers_ai.txt).
 
-    - Cek field dedupe (default email): kalau sudah ada, jangan tambah.
-    - Tidak pernah menghapus data lama; hanya menambah yang baru.
-    - Update BOTH accounts.json dan accounts.csv secara konsisten.
+    Aturan:
+      - Dedup: cek field dedupe_field (default email) di SEMUA 3 file.
+        Kalau sudah ada di salah satu → SKIP semua.
+      - Append: tidak hapus data lama, hanya tambah baris baru.
+      - workers_ai.txt: 1 akun = 1 baris, format name|apiKey|accountId.
 
     Returns:
-        {'added': bool, 'reason': str} — status penambahan.
+        {'added': bool, 'reason': str}
     """
     dedupe_field = cfg.get("storage", {}).get("dedupe_field", "email")
     key = account.get(dedupe_field)
@@ -170,35 +295,28 @@ def append_account(cfg: dict, account: dict) -> dict:
     if not key:
         return {"added": False, "reason": f"field dedupe '{dedupe_field}' kosong"}
 
-    # Cek duplikat di JSON + CSV
-    if key in _existing_emails(cfg) or key in _read_csv_emails(cfg):
+    # Cek duplikat di SEMUA 3 file
+    if _is_duplicate(cfg, account):
         return {"added": False, "reason": f"duplikat: {key}"}
 
-    # Tambahkan timestamp
-    account["created_at"] = account.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Tambah timestamp
+    account["created_at"] = account.get("created_at") or datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
-    # Update JSON (append)
-    accounts = load_accounts(cfg)
-    accounts.append(account)
-    with open(_accounts_path(cfg), "w", encoding="utf-8") as f:
-        json.dump(accounts, f, indent=2, ensure_ascii=False)
-
-    # Update CSV (append, jangan hapus)
+    # Tulis ke SEMUA 3 file
     stor = cfg.get("storage", {})
+
+    # 1. JSON (selalu)
+    _append_json(cfg, account)
+
+    # 2. CSV (jika enabled)
     if stor.get("csv_enabled", True):
-        csv_path = _csv_path(cfg)
-        if os.path.exists(csv_path):
-            # Baca yang ada, tambah baris baru
-            with open(csv_path, "r", encoding="utf-8", newline="") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
-            rows.append({c: account.get(c, "") for c in CSV_COLUMNS})
-            with open(csv_path, "w", encoding="utf-8", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
-                writer.writeheader()
-                writer.writerows(rows)
-        else:
-            _write_csv(csv_path, accounts)
+        _append_csv(cfg, account)
+
+    # 3. workers_ai.txt (jika enabled)
+    if stor.get("workers_ai_enabled", True):
+        _append_wai(cfg, account)
 
     return {"added": True, "reason": "ok"}
 

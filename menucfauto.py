@@ -92,11 +92,14 @@ def show_config(cfg):
     print(f"  Headless   : {cfg['browser']['headless']}")
     print(f"  Proxy      : {cfg['browser']['proxy'] or '(tidak ada)'}")
     print(f"Storage")
-    print(f"  File JSON  : {cfg['storage']['accounts_file']}")
-    print(f"  File CSV   : {cfg['storage'].get('csv_file', 'accounts.csv')}")
-    print(f"  CSV Aktif  : {cfg['storage'].get('csv_enabled', True)}")
-    print(f"  Append     : {cfg['storage']['append']}")
-    print(f"  Dedupe     : {cfg['storage'].get('dedupe_field', 'email')}")
+    print(f"  File JSON    : {cfg['storage']['accounts_file']}")
+    print(f"  File CSV     : {cfg['storage'].get('csv_file', 'accounts.csv')}")
+    print(f"  File WAI     : {cfg['storage'].get('workers_ai_file', 'workers_ai.txt')}")
+    print(f"  WAI Format   : {cfg['storage'].get('workers_ai_format', '{name}|{apiKey}|{accountId}')}")
+    print(f"  CSV Aktif    : {cfg['storage'].get('csv_enabled', True)}")
+    print(f"  WAI Aktif    : {cfg['storage'].get('workers_ai_enabled', True)}")
+    print(f"  Append       : {cfg['storage']['append']}")
+    print(f"  Dedupe       : {cfg['storage'].get('dedupe_field', 'email')}")
 
 
 def menu_tmpmail(cfg):
@@ -142,12 +145,21 @@ def menu_browser(cfg):
 
 
 def menu_storage(cfg):
-    print("\n  SETUP STORAGE")
+    print("\n  SETUP STORAGE (3 format output)")
     divider()
     st = cfg["storage"]
+    print("  Format yang tersedia:")
+    print("    1. JSON  (accounts.json)  — semua field lengkap")
+    print("    2. CSV   (accounts.csv)   — spreadsheet, semua kolom")
+    print("    3. WAI   (workers_ai.txt) — name|apiKey|accountId per baris")
+    print()
     st["accounts_file"] = ask("File JSON penyimpanan akun", st["accounts_file"])
-    st["csv_file"] = ask("File CSV penyimpanan akun", st["csv_file"])
-    st["csv_enabled"] = ask_bool("Simpan juga ke CSV", st.get("csv_enabled", True))
+    st["csv_file"] = ask("File CSV penyimpanan akun", st.get("csv_file", "accounts.csv"))
+    st["workers_ai_file"] = ask("File Workers AI (.txt)", st.get("workers_ai_file", "workers_ai.txt"))
+    print("  Format Workers AI (placeholder: {name} {apiKey} {accountId})")
+    st["workers_ai_format"] = ask("Format WAI", st.get("workers_ai_format", "{name}|{apiKey}|{accountId}"))
+    st["csv_enabled"] = ask_bool("Simpan ke CSV", st.get("csv_enabled", True))
+    st["workers_ai_enabled"] = ask_bool("Simpan ke Workers AI txt", st.get("workers_ai_enabled", True))
     st["append"] = ask_bool("Append (tidak menimpa akun lama)", st["append"])
     st["dedupe_field"] = ask("Field untuk cek duplikat", st.get("dedupe_field", "email"))
     save_config(cfg)
