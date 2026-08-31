@@ -29,6 +29,9 @@ DEFAULTS = {
         "domains": ["renunganbot.qzz.io"],
         "prefix": "cf",
         "email_format": "{prefix}{rand8}",
+        "naming_mode": "format",
+        "wordlist_file": "",
+        "wordlist_index": 0,
     },
     "password": {"mode": "random", "fixed": "", "length": 16},
     "browser": {"headless": False, "proxy": ""},
@@ -99,8 +102,49 @@ def _wai_path(cfg: dict) -> str:
 # Email format
 # ---------------------------------------------------------------------------
 def generate_username(cfg: dict) -> str:
-    """Buat username sesuai aturan email_format di config."""
+    """
+    Buat username sesuai aturan config.
+
+    Mode:
+      - 'format'  : pakai email_format dengan placeholder {prefix} {rand8} {rand6} {randnum}
+      - 'wordlist': baca baris berikutnya dari file wordlist, lalu simpan index
+    """
+    import json as _json
+
     tm = cfg["temp_mail"]
+    mode = tm.get("naming_mode", "format")
+
+    if mode == "wordlist":
+        wl_path = tm.get("wordlist_file", "")
+        if not wl_path:
+            raise RuntimeError("naming_mode=wordlist tapi wordlist_file kosong")
+
+        if not os.path.isabs(wl_path):
+            wl_path = os.path.join(_BASE, wl_path)
+
+        if not os.path.exists(wl_path):
+            raise RuntimeError(f"file wordlist tidak ada: {wl_path}")
+
+        # Baca semua baris, skip kosong & komentar
+        with open(wl_path, "r", encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+
+        if not lines:
+            raise RuntimeError("wordlist kosong")
+
+        idx = tm.get("wordlist_index", 0)
+        if idx >= len(lines):
+            idx = 0  # reset kalau sudah habis
+
+        username = lines[idx]
+
+        # Update index untuk akun berikutnya
+        tm["wordlist_index"] = idx + 1
+        save_config(cfg)
+
+        return username
+
+    # Mode 'format' (default)
     fmt = tm.get("email_format", "{prefix}{rand8}")
     prefix = tm.get("prefix", "cf")
     rand8 = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))

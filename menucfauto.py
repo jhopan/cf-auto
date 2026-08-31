@@ -81,7 +81,14 @@ def show_config(cfg):
     print(f"  API Key    : {cfg['temp_mail']['api_key'][:12]}... (disembunyikan)" if cfg['temp_mail']['api_key'] else "  API Key    : (kosong)")
     print(f"  Domains    : {', '.join(cfg['temp_mail']['domains'])}")
     print(f"  Prefix     : {cfg['temp_mail']['prefix']}")
-    print(f"  Email Fmt  : {cfg['temp_mail'].get('email_format', '{prefix}{rand8}')}")
+    nm = cfg['temp_mail'].get('naming_mode', 'format')
+    print(f"  Naming    : {nm}")
+    if nm == 'wordlist':
+        wl = cfg['temp_mail'].get('wordlist_file', '')
+        idx = cfg['temp_mail'].get('wordlist_index', 0)
+        print(f"  Wordlist  : {wl} (index: {idx})")
+    else:
+        print(f"  Email Fmt : {cfg['temp_mail'].get('email_format', '{prefix}{rand8}')}")
     print(f"Password")
     print(f"  Mode       : {cfg['password']['mode']}")
     if cfg['password']['mode'] == 'fixed':
@@ -110,8 +117,6 @@ def menu_tmpmail(cfg):
     tm["api_key"] = ask("API Key (kosongkan jika tidak perlu)", tm["api_key"])
     tm["domains"] = ask_domains(tm["domains"])
     tm["prefix"] = ask("Prefix username", tm["prefix"])
-    print("  Format username email (placeholder: {prefix} {rand8} {rand6} {randnum})")
-    tm["email_format"] = ask("email_format", tm.get("email_format", "{prefix}{rand8}"))
     save_config(cfg)
     print("  ✅ Config temp mail disimpan.")
 
@@ -142,6 +147,42 @@ def menu_browser(cfg):
     br["proxy"] = ask("Proxy (kosongkan jika tidak ada)", br["proxy"])
     save_config(cfg)
     print("  ✅ Config browser disimpan.")
+
+
+def menu_naming(cfg):
+    print("\n  SETUP ATURAN PENAMAAN EMAIL")
+    divider()
+    tm = cfg["temp_mail"]
+    print("  Mode penamaan:")
+    print("    format   = pakai template (placeholder)")
+    print("    wordlist = baca dari file (1 baris = 1 username)")
+    mode = ask("Mode (format/wordlist)", tm.get("naming_mode", "format")).lower()
+    tm["naming_mode"] = mode
+
+    if mode == "wordlist":
+        wl = ask("File wordlist (path)", tm.get("wordlist_file", ""))
+        tm["wordlist_file"] = wl
+        # Cek file ada
+        wl_path = wl
+        if wl_path and not os.path.isabs(wl_path):
+            wl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), wl_path)
+        if wl and os.path.exists(wl_path):
+            with open(wl_path, "r", encoding="utf-8") as f:
+                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+            print(f"  ✅ Wordlist dimuat: {len(lines)} baris")
+            if lines:
+                print(f"     Baris pertama: {lines[0]}")
+                print(f"     Baris terakhir: {lines[-1]}")
+        else:
+            print(f"  ⚠ File tidak ditemukan: {wl_path}")
+        # Reset index kalau ganti file
+        tm["wordlist_index"] = 0
+    else:
+        print("  Format username (placeholder: {prefix} {rand8} {rand6} {randnum})")
+        tm["email_format"] = ask("email_format", tm.get("email_format", "{prefix}{rand8}"))
+
+    save_config(cfg)
+    print("  ✅ Config penamaan disimpan.")
 
 
 def menu_storage(cfg):
@@ -193,12 +234,13 @@ def main():
         print("  2. Atur Temp Mail (endpoint/domain/key)")
         print("  3. Atur Password")
         print("  4. Atur Browser")
-        print("  5. Atur Storage (file akun)")
-        print("  6. Lihat akun tersimpan")
-        print("  7. Jalankan runner.py (1 akun)")
-        print("  8. Keluar")
+        print("  5. Atur Penamaan Email (format/wordlist)")
+        print("  6. Atur Storage (file akun)")
+        print("  7. Lihat akun tersimpan")
+        print("  8. Jalankan runner.py (1 akun)")
+        print("  9. Keluar")
         divider()
-        choice = input("  Pilih [1-8]: ").strip()
+        choice = input("  Pilih [1-9]: ").strip()
 
         if choice == "1":
             clear()
@@ -214,9 +256,12 @@ def main():
             menu_browser(cfg)
             cfg = load_config()
         elif choice == "5":
-            menu_storage(cfg)
+            menu_naming(cfg)
             cfg = load_config()
         elif choice == "6":
+            menu_storage(cfg)
+            cfg = load_config()
+        elif choice == "7":
             clear()
             accounts = load_accounts(cfg)
             divider()
@@ -227,9 +272,9 @@ def main():
             for i, a in enumerate(accounts, 1):
                 print(f"  {i}. {a.get('email')}  {a.get('created_at','')}")
             input("  Tekan Enter untuk kembali...")
-        elif choice == "7":
-            menu_run(cfg)
         elif choice == "8":
+            menu_run(cfg)
+        elif choice == "9":
             print("  👋 Sampai jumpa!")
             break
         else:

@@ -4,7 +4,10 @@
     "api_key": "",
     "domains": ["renunganbot.qzz.io"],
     "prefix": "cf",
-    "email_format": "{prefix}{rand8}"
+    "email_format": "{prefix}{rand8}",
+    "naming_mode": "format",
+    "wordlist_file": "",
+    "wordlist_index": 0
   },
   "password": {
     "mode": "random",
