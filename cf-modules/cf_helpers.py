@@ -209,12 +209,58 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         }""")
 
         if checkbox_pos:
+            # Ambil screenshot sebelum klik
             try:
-                page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
-                log.info("→ Klik checkbox 'Verify you are human' (%.0f, %.0f)",
-                         checkbox_pos['x'], checkbox_pos['y'])
+                debug_dir = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "..", "debug"
+                )
+                os.makedirs(debug_dir, exist_ok=True)
+                page.screenshot(path=os.path.join(debug_dir, "turnstile_before_click.png"))
+                log.info("→ Screenshot disimpan: debug/turnstile_before_click.png")
             except Exception:
                 pass
+
+            # Klik checkbox dengan PointerEvent (lebih reliable untuk React)
+            try:
+                # Cari element checkbox spesifik
+                clicked = page.evaluate("""() => {
+                    const all = document.querySelectorAll('*');
+                    for (const el of all) {
+                        const txt = (el.textContent || '').toLowerCase().trim();
+                        if ((txt.includes('verify you are human') ||
+                             txt.includes('let us know you are human') ||
+                             txt.includes('sahkan anda manusia')) &&
+                            txt.length < 200) {
+                            const r = el.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0 && r.height < 100) {
+                                // Dispatch PointerEvent + MouseEvent
+                                el.dispatchEvent(new PointerEvent('pointerdown',
+                                    {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                el.dispatchEvent(new PointerEvent('pointerup',
+                                    {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+                                el.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+                                el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                                el.click();
+                                return 'clicked: ' + txt.slice(0, 30);
+                            }
+                        }
+                    }
+                    return 'not found';
+                }""")
+                if 'clicked' in str(clicked):
+                    log.info("→ Klik checkbox via PointerEvent: %s", str(clicked)[:50])
+                else:
+                    # Fallback: page.mouse.click
+                    page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
+                    log.info("→ Klik checkbox via mouse (%.0f, %.0f)",
+                             checkbox_pos['x'], checkbox_pos['y'])
+            except Exception as e:
+                log.warning("⚠ Gagal klik checkbox: %s", str(e)[:60])
+                try:
+                    page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
+                except Exception:
+                    pass
 
             # Tunggu 10 detik, cek setiap 2 detik
             for _ in range(5):
@@ -232,10 +278,11 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                 except Exception:
                     pass
 
-            # Kalau masih belum, klik lagi sedikit beda posisi
+            # Kalau masih belum, tunggu 5 detik baru klik lagi
+            time.sleep(5)
             try:
-                page.mouse.click(checkbox_pos['x'] - 10, checkbox_pos['y'])
-                log.info("→ Klik ulang checkbox (kiri 10px)")
+                page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
+                log.info("→ Klik ulang checkbox (5s jeda)")
             except Exception:
                 pass
 
