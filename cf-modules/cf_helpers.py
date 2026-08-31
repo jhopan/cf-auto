@@ -170,7 +170,7 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         pass
 
     while time.time() < deadline:
-        # --- Strategy 1: cek auto-solve ---
+        # --- Cek auto-solve ---
         try:
             val = page.evaluate("""() => {
                 const el = document.querySelector(
@@ -184,137 +184,21 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         except Exception:
             pass
 
-        # --- Strategy 2: frame_locator ---
-        try:
-            ts_frame = page.frame_locator(
-                'iframe[src*="challenges.cloudflare.com"]'
-            )
-            for sel in [
-                'input[type="checkbox"]',
-                '[role="checkbox"]',
-                '#challenge-stage input',
-                'label',
-                '.cb-lb',
-                '.ctp-checkbox-label',
-                '#verify',
-                'div[role="checkbox"]',
-                '.mark',
-            ]:
-                try:
-                    loc = ts_frame.locator(sel).first
-                    if loc.count() > 0 and loc.is_visible(timeout=2000):
-                        loc.click(timeout=5000)
-                        log.info("→ Turnstile diklik frame_locator (%s)", sel)
-                        page.wait_for_timeout(5000)
-                        val = page.evaluate("""() => {
-                            const el = document.querySelector(
-                                'input[name="cf_challenge_response"]'
-                            );
-                            return el ? el.value : null;
-                        }""")
-                        if val and len(val) > 20:
-                            log.info("✓ Turnstile solved setelah klik")
-                            return True
-                        break
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-        # --- Strategy 3: frame object ---
-        try:
-            for frame in page.frames:
-                frame_url = frame.url or ""
-                if "challenges.cloudflare.com" in frame_url:
-                    for sel in [
-                        'input[type="checkbox"]',
-                        '[role="checkbox"]',
-                        'label',
-                        '.cb-lb',
-                        '.mark',
-                    ]:
-                        try:
-                            el = frame.wait_for_selector(
-                                sel, timeout=2000, state="visible"
-                            )
-                            if el:
-                                el.click(timeout=3000)
-                                log.info("→ Turnstile diklik frame (%s)", sel)
-                                page.wait_for_timeout(5000)
-                                break
-                        except Exception:
-                            continue
-                    break
-        except Exception:
-            pass
-
-        # --- Strategy 4: coordinate click ---
+        # --- Klik coordinate (28,28) di dalam iframe ---
+        # Lalu tunggu 10 detik, cek, kalau belum klik lagi
         try:
             for frame in page.frames:
                 if "challenges.cloudflare.com" in (frame.url or ""):
-                    for coord in [
-                        {"x": 28, "y": 28},
-                        {"x": 20, "y": 20},
-                        {"x": 35, "y": 35},
-                        {"x": 15, "y": 15},
-                        {"x": 25, "y": 30},
-                        {"x": 30, "y": 25},
-                        {"x": 40, "y": 40},
-                        {"x": 50, "y": 50},
-                        {"x": 12, "y": 12},
-                        {"x": 24, "y": 24},
-                    ]:
-                        try:
-                            frame.click(
-                                "body", timeout=2000, position=coord
-                            )
-                            log.info(
-                                "→ Turnstile diklik coordinate (%d,%d)",
-                                coord["x"], coord["y"],
-                            )
-                            page.wait_for_timeout(5000)
-                            val = page.evaluate("""() => {
-                                const el = document.querySelector(
-                                    'input[name="cf_challenge_response"]'
-                                );
-                                return el ? el.value : null;
-                            }""")
-                            if val and len(val) > 20:
-                                log.info(
-                                    "✓ Turnstile solved via coordinate"
-                                )
-                                return True
-                            break
-                        except Exception:
-                            continue
+                    frame.click("body", timeout=2000, position={"x": 28, "y": 28})
+                    log.info("→ Turnstile diklik coordinate (28,28)")
                     break
         except Exception:
             pass
 
-        # --- Strategy 5: page.mouse.click() di posisi iframe ---
-        try:
-            iframe_box = page.evaluate("""() => {
-                const iframe = document.querySelector(
-                    'iframe[src*="challenges.cloudflare.com"]'
-                );
-                if (iframe) {
-                    const rect = iframe.getBoundingClientRect();
-                    return {
-                        x: rect.x, y: rect.y,
-                        width: rect.width, height: rect.height
-                    };
-                }
-                return null;
-            }""")
-            if iframe_box and iframe_box["width"] > 0:
-                click_x = iframe_box["x"] + 28
-                click_y = iframe_box["y"] + 28
-                page.mouse.click(click_x, click_y)
-                log.info(
-                    "→ Turnstile diklik via mouse (%.0f, %.0f)",
-                    click_x, click_y,
-                )
-                page.wait_for_timeout(5000)
+        # Tunggu 10 detik, cek setiap 2 detik
+        for _ in range(5):
+            time.sleep(2)
+            try:
                 val = page.evaluate("""() => {
                     const el = document.querySelector(
                         'input[name="cf_challenge_response"]'
@@ -322,12 +206,37 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                     return el ? el.value : null;
                 }""")
                 if val and len(val) > 20:
-                    log.info("✓ Turnstile solved via mouse click")
+                    log.info("✓ Turnstile solved via coordinate click")
                     return True
+            except Exception:
+                pass
+
+        # Kalau masih belum solved, klik lagi di koordinat berbeda
+        # Kalau masih belum solved, klik lagi di koordinat berbeda
+        try:
+            for frame in page.frames:
+                if "challenges.cloudflare.com" in (frame.url or ""):
+                    frame.click("body", timeout=2000, position={"x": 20, "y": 20})
+                    log.info("→ Turnstile diklik ulang (20,20)")
+                    break
         except Exception:
             pass
 
-        time.sleep(3)
+        # Tunggu 10 detik lagi
+        for _ in range(5):
+            time.sleep(2)
+            try:
+                val = page.evaluate("""() => {
+                    const el = document.querySelector(
+                        'input[name="cf_challenge_response"]'
+                    );
+                    return el ? el.value : null;
+                }""")
+                if val and len(val) > 20:
+                    log.info("✓ Turnstile solved via retry click")
+                    return True
+            except Exception:
+                pass
 
     # --- Last check ---
     try:
