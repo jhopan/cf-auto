@@ -166,8 +166,9 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
             'iframe[src*="challenges.cloudflare.com"]',
             timeout=10000, state="attached",
         )
+        log.info("→ Turnstile iframe ditemukan")
     except Exception:
-        pass
+        log.warning("⚠ Turnstile iframe tidak ditemukan dalam 10s")
 
     while time.time() < deadline:
         # --- Cek auto-solve ---
@@ -184,59 +185,74 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         except Exception:
             pass
 
-        # --- Klik coordinate (28,28) di dalam iframe ---
-        # Lalu tunggu 10 detik, cek, kalau belum klik lagi
-        try:
-            for frame in page.frames:
-                if "challenges.cloudflare.com" in (frame.url or ""):
-                    frame.click("body", timeout=2000, position={"x": 28, "y": 28})
-                    log.info("→ Turnstile diklik coordinate (28,28)")
-                    break
-        except Exception:
-            pass
+        # --- Klik via page.mouse di posisi iframe ---
+        # Cari posisi iframe di halaman
+        iframe_box = page.evaluate("""() => {
+            const iframe = document.querySelector(
+                'iframe[src*="challenges.cloudflare.com"]'
+            );
+            if (iframe) {
+                const rect = iframe.getBoundingClientRect();
+                return {
+                    x: rect.x, y: rect.y,
+                    width: rect.width, height: rect.height
+                };
+            }
+            return null;
+        }""")
 
-        # Tunggu 10 detik, cek setiap 2 detik
-        for _ in range(5):
-            time.sleep(2)
+        if iframe_box and iframe_box["width"] > 0:
+            # Klik tengah-kiri iframe (posisi checkbox Turnstile)
+            click_x = iframe_box["x"] + 28
+            click_y = iframe_box["y"] + iframe_box["height"] / 2
             try:
-                val = page.evaluate("""() => {
-                    const el = document.querySelector(
-                        'input[name="cf_challenge_response"]'
-                    );
-                    return el ? el.value : null;
-                }""")
-                if val and len(val) > 20:
-                    log.info("✓ Turnstile solved via coordinate click")
-                    return True
+                page.mouse.click(click_x, click_y)
+                log.info("→ Turnstile diklik mouse (%.0f, %.0f)", click_x, click_y)
             except Exception:
                 pass
 
-        # Kalau masih belum solved, klik lagi di koordinat berbeda
-        # Kalau masih belum solved, klik lagi di koordinat berbeda
-        try:
-            for frame in page.frames:
-                if "challenges.cloudflare.com" in (frame.url or ""):
-                    frame.click("body", timeout=2000, position={"x": 20, "y": 20})
-                    log.info("→ Turnstile diklik ulang (20,20)")
-                    break
-        except Exception:
-            pass
+            # Tunggu 10 detik, cek setiap 2 detik
+            for _ in range(5):
+                time.sleep(2)
+                try:
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via mouse click")
+                        return True
+                except Exception:
+                    pass
 
-        # Tunggu 10 detik lagi
-        for _ in range(5):
-            time.sleep(2)
+            # Kalau masih belum solved, klik lagi di koordinat berbeda
             try:
-                val = page.evaluate("""() => {
-                    const el = document.querySelector(
-                        'input[name="cf_challenge_response"]'
-                    );
-                    return el ? el.value : null;
-                }""")
-                if val and len(val) > 20:
-                    log.info("✓ Turnstile solved via retry click")
-                    return True
+                page.mouse.click(iframe_box["x"] + 20, iframe_box["y"] + iframe_box["height"] / 2)
+                log.info("→ Turnstile diklik ulang mouse (20, mid)")
             except Exception:
                 pass
+
+            # Tunggu 10 detik lagi
+            for _ in range(5):
+                time.sleep(2)
+                try:
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via retry mouse click")
+                        return True
+                except Exception:
+                    pass
+        else:
+            # iframe tidak ditemukan, coba cari ulang
+            log.warning("⚠ Iframe Turnstile tidak terdeteksi, tunggu...")
+            time.sleep(5)
 
     # --- Last check ---
     try:
