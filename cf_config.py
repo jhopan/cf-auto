@@ -125,8 +125,13 @@ def generate_username(cfg: dict) -> str:
 
         # Baca CSV wordlist
         rows = []
+        fieldnames = []
         with open(wl_path, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
+            fieldnames = [fn for fn in (reader.fieldnames or []) if fn.strip()]
+            # Pastikan minimal 3 kolom: nomor, nama, status
+            if "nama" not in fieldnames:
+                raise RuntimeError("wordlist CSV harus punya kolom: nomor,nama,status")
             for row in reader:
                 rows.append(row)
 
@@ -154,10 +159,10 @@ def generate_username(cfg: dict) -> str:
         # Tandai baris sebagai 'used'
         rows[chosen_idx]["status"] = "used"
 
-        # Tulis ulang CSV dengan status updated
-        fieldnames = list(rows[0].keys())
+        # Tulis ulang CSV dengan hanya 3 kolom: nomor, nama, status
+        clean_fields = ["nomor", "nama", "status"]
         with open(wl_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=clean_fields, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(rows)
 
@@ -224,15 +229,15 @@ def wordlist_reset(cfg: dict) -> int:
     rows = []
     with open(wl_path, "r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
         for row in reader:
             if (row.get("status") or "").strip().lower() == "used":
                 row["status"] = ""
                 count += 1
             rows.append(row)
 
+    clean_fields = ["nomor", "nama", "status"]
     with open(wl_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=clean_fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
