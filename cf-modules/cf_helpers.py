@@ -171,7 +171,7 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         log.warning("⚠ Turnstile iframe tidak ditemukan dalam 10s")
 
     while time.time() < deadline:
-        # --- Cek auto-solve ---
+        # --- Cek auto-solve (token sudah ada) ---
         try:
             val = page.evaluate("""() => {
                 const el = document.querySelector(
@@ -185,8 +185,76 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         except Exception:
             pass
 
-        # --- Klik via page.mouse di posisi iframe ---
-        # Cari posisi iframe di halaman
+        # --- Strategy A: Cari checkbox langsung di halaman (bukan iframe) ---
+        # Cloudflare signup punya checkbox "Verify you are human" langsung di page
+        checkbox_pos = page.evaluate("""() => {
+            // Cari element yang mengandung "verify you are human" atau "Let us know you are human"
+            const all = document.querySelectorAll('*');
+            for (const el of all) {
+                const txt = (el.textContent || '').toLowerCase().trim();
+                if (txt.includes('verify you are human') ||
+                    txt.includes('let us know you are human') ||
+                    txt.includes('sahkan anda manusia')) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0 && r.height < 100) {
+                        return {
+                            x: r.x + r.width / 2,
+                            y: r.y + r.height / 2,
+                            text: txt.slice(0, 40),
+                        };
+                    }
+                }
+            }
+            return null;
+        }""")
+
+        if checkbox_pos:
+            try:
+                page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
+                log.info("→ Klik checkbox 'Verify you are human' (%.0f, %.0f)",
+                         checkbox_pos['x'], checkbox_pos['y'])
+            except Exception:
+                pass
+
+            # Tunggu 10 detik, cek setiap 2 detik
+            for _ in range(5):
+                time.sleep(2)
+                try:
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via checkbox click")
+                        return True
+                except Exception:
+                    pass
+
+            # Kalau masih belum, klik lagi sedikit beda posisi
+            try:
+                page.mouse.click(checkbox_pos['x'] - 10, checkbox_pos['y'])
+                log.info("→ Klik ulang checkbox (kiri 10px)")
+            except Exception:
+                pass
+
+            for _ in range(5):
+                time.sleep(2)
+                try:
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via retry checkbox")
+                        return True
+                except Exception:
+                    pass
+
+        # --- Strategy B: Klik via page.mouse di posisi iframe (kalau ada iframe) ---
         iframe_box = page.evaluate("""() => {
             const iframe = document.querySelector(
                 'iframe[src*="challenges.cloudflare.com"]'
@@ -202,16 +270,14 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         }""")
 
         if iframe_box and iframe_box["width"] > 0:
-            # Klik tengah-kiri iframe (posisi checkbox Turnstile)
             click_x = iframe_box["x"] + 28
             click_y = iframe_box["y"] + iframe_box["height"] / 2
             try:
                 page.mouse.click(click_x, click_y)
-                log.info("→ Turnstile diklik mouse (%.0f, %.0f)", click_x, click_y)
+                log.info("→ Turnstile diklik mouse iframe (%.0f, %.0f)", click_x, click_y)
             except Exception:
                 pass
 
-            # Tunggu 10 detik, cek setiap 2 detik
             for _ in range(5):
                 time.sleep(2)
                 try:
@@ -222,37 +288,15 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                         return el ? el.value : null;
                     }""")
                     if val and len(val) > 20:
-                        log.info("✓ Turnstile solved via mouse click")
-                        return True
-                except Exception:
-                    pass
-
-            # Kalau masih belum solved, klik lagi di koordinat berbeda
-            try:
-                page.mouse.click(iframe_box["x"] + 20, iframe_box["y"] + iframe_box["height"] / 2)
-                log.info("→ Turnstile diklik ulang mouse (20, mid)")
-            except Exception:
-                pass
-
-            # Tunggu 10 detik lagi
-            for _ in range(5):
-                time.sleep(2)
-                try:
-                    val = page.evaluate("""() => {
-                        const el = document.querySelector(
-                            'input[name="cf_challenge_response"]'
-                        );
-                        return el ? el.value : null;
-                    }""")
-                    if val and len(val) > 20:
-                        log.info("✓ Turnstile solved via retry mouse click")
+                        log.info("✓ Turnstile solved via iframe click")
                         return True
                 except Exception:
                     pass
         else:
-            # iframe tidak ditemukan, coba cari ulang
-            log.warning("⚠ Iframe Turnstile tidak terdeteksi, tunggu...")
-            time.sleep(5)
+            # Tidak ada iframe dan tidak ada checkbox → tunggu
+            if not checkbox_pos:
+                log.warning("⚠ Tidak ada checkbox/iframe Turnstile, tunggu...")
+                time.sleep(5)
 
     # --- Last check ---
     try:
