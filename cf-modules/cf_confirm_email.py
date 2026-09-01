@@ -253,6 +253,10 @@ class ConfirmEmail:
         # --- Step F: Verifikasi dengan buka workers-and-pages lagi ---
         # Jika halaman workers-and-pages tidak minta verifikasi lagi,
         # artinya email sudah terverifikasi
+        # Tunggu 5 detik dulu biar redirect Cloudflare selesai (hindari NS_ERROR_ABORT)
+        log.info("→ Tunggu 5s biar redirect Cloudflare selesai...")
+        time.sleep(5)
+
         log.info("→ Cek verifikasi: buka workers-and-pages...")
         workers_url = f"https://dash.cloudflare.com/{account_id}/workers-and-pages"
 
@@ -268,9 +272,9 @@ class ConfirmEmail:
                     break
                 except Exception as e:
                     log.warning("⚠ Navigasi gagal (attempt %d): %s", attempt + 1, str(e)[:60])
-                    time.sleep(3)
+                    time.sleep(5)  # jeda 5 detik sebelum retry
 
-        time.sleep(5)
+        time.sleep(5)  # jeda 5 detik setelah navigasi biar page stabil
 
         try:
             body_text = page.inner_text("body")
