@@ -195,20 +195,24 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
             const verifyKeywords = ['verify', 'sahkan', '驗證', '確認', '확인'];
 
             // Cara 1: cari div.cf-turnstile atau element checkbox yang visible
-            // dan parent-nya ada text "human" (bahasa apa saja)
+            // dan sibling/dekat dengan text "human" (bahasa apa saja)
             const checkboxes = document.querySelectorAll(
                 'div.cf-turnstile, input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label, div[class*="turnstile"]'
             );
             for (const cb of checkboxes) {
                 const r = cb.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
-                    // Cek parent apakah dekat dengan text "human"
+                    // Cek parent HANYA 2 level (jangan sampai ke heading)
                     let parent = cb.parentElement;
-                    for (let j = 0; j < 5; j++) {
+                    for (let j = 0; j < 3; j++) {
                         if (!parent) break;
                         const txt = (parent.textContent || '').toLowerCase();
                         // Skip "Save email" checkbox
                         if (txt.includes('save email') || txt.includes('simpan email')) {
+                            break;
+                        }
+                        // Skip heading "Let us know you are human"
+                        if (txt.includes('let us know') || txt.includes('beritahu kami')) {
                             break;
                         }
                         // Cek keyword human
@@ -217,7 +221,7 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                                 return {
                                     x: r.x + r.width / 2,
                                     y: r.y + r.height / 2,
-                                    text: 'checkbox near human: ' + txt.slice(0, 30),
+                                    text: 'checkbox: ' + txt.slice(0, 40),
                                 };
                             }
                         }
@@ -273,18 +277,22 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                     for (const cb of checkboxes) {
                         const r = cb.getBoundingClientRect();
                         if (r.width > 0 && r.height > 0) {
+                            // Cek parent HANYA 3 level (jangan sampai ke heading)
                             let parent = cb.parentElement;
-                            for (let j = 0; j < 5; j++) {
+                            for (let j = 0; j < 3; j++) {
                                 if (!parent) break;
                                 const txt = (parent.textContent || '').toLowerCase();
                                 // Skip "Save email" checkbox
                                 if (txt.includes('save email') || txt.includes('simpan email')) {
                                     break;
                                 }
+                                // Skip heading "Let us know you are human"
+                                if (txt.includes('let us know') || txt.includes('beritahu kami')) {
+                                    break;
+                                }
                                 // Cek keyword human
                                 for (const kw of humanKeywords) {
                                     if (txt.toLowerCase().includes(kw.toLowerCase())) {
-                                        // Dispatch PointerEvent + MouseEvent
                                         cb.dispatchEvent(new PointerEvent('pointerdown',
                                             {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
                                         cb.dispatchEvent(new PointerEvent('pointerup',
@@ -293,7 +301,7 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                                         cb.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
                                         cb.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
                                         cb.click();
-                                        return 'clicked cf-turnstile near human';
+                                        return 'clicked cf-turnstile: ' + txt.slice(0, 30);
                                     }
                                 }
                                 parent = parent.parentElement;
