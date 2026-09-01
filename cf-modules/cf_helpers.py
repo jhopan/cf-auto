@@ -188,10 +188,16 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         # --- Strategy A: Cari checkbox langsung di halaman (bukan iframe) ---
         # Cloudflare signup punya checkbox "Verify you are human" langsung di page
         # PENTING: cari element checkbox/input, BUKAN text "Let us know you are human"
+        # Support multi-bahasa: EN (human), ID (manusia), CN (真人), dll
         checkbox_pos = page.evaluate("""() => {
-            // Cara 1: cari input[type=checkbox] yang visible dan dekat dengan text "human"
+            // Daftar keyword "human" dalam berbagai bahasa
+            const humanKeywords = ['human', 'manusia', '真人', '人間', '인간'];
+            const verifyKeywords = ['verify', 'sahkan', '驗證', '確認', '확인'];
+
+            // Cara 1: cari input[type=checkbox] / [role=checkbox] yang visible
+            // dan parent-nya ada text "human" (bahasa apa saja)
             const checkboxes = document.querySelectorAll(
-                'input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"]'
+                'input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label'
             );
             for (const cb of checkboxes) {
                 const r = cb.getBoundingClientRect();
@@ -201,28 +207,37 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                     for (let j = 0; j < 5; j++) {
                         if (!parent) break;
                         const txt = (parent.textContent || '').toLowerCase();
-                        if (txt.includes('human') || txt.includes('manusia')) {
-                            return {
-                                x: r.x + r.width / 2,
-                                y: r.y + r.height / 2,
-                                text: 'checkbox near human text',
-                            };
+                        // Skip "Save email" checkbox
+                        if (txt.includes('save email') || txt.includes('simpan email')) {
+                            break;
+                        }
+                        // Cek keyword human
+                        for (const kw of humanKeywords) {
+                            if (txt.toLowerCase().includes(kw.toLowerCase())) {
+                                return {
+                                    x: r.x + r.width / 2,
+                                    y: r.y + r.height / 2,
+                                    text: 'checkbox near human: ' + txt.slice(0, 30),
+                                };
+                            }
                         }
                         parent = parent.parentElement;
                     }
                 }
             }
-            // Cara 2: cari div/span/label dengan text persis "verify you are human"
+            // Cara 2: cari div/span/label kecil dengan text "verify" + "human"
             // tapi BUKAN heading "Let us know you are human"
             const all = document.querySelectorAll('label, span, div, a');
             for (const el of all) {
-                // Hanya element kecil (checkbox-sized, bukan heading)
                 const r = el.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0 && r.height < 60 && r.width < 400) {
                     const txt = (el.textContent || '').toLowerCase().trim();
-                    // Cari text yang mengandung "verify" dan "human" tapi BUKAN "let us know"
-                    if ((txt.includes('verify') && txt.includes('human')) ||
-                        (txt.includes('sahkan') && txt.includes('manusia'))) {
+                    // Skip heading
+                    if (txt.includes('let us know') || txt.includes('beritahu kami')) continue;
+                    // Cek verify + human (bahasa apa saja)
+                    let hasVerify = verifyKeywords.some(kw => txt.toLowerCase().includes(kw.toLowerCase()));
+                    let hasHuman = humanKeywords.some(kw => txt.toLowerCase().includes(kw.toLowerCase()));
+                    if (hasVerify && hasHuman) {
                         return {
                             x: r.x + r.width / 2,
                             y: r.y + r.height / 2,
