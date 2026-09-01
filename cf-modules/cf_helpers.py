@@ -160,10 +160,6 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
     log.info("⏳ Menunggu Turnstile solve...")
     deadline = time.time() + timeout
 
-    # Keyword "human" multi-bahasa
-    keywords = ['manusia', 'human', 'Verify you are human', 'Verifikasi',
-                'sahkan', 'verify']
-
     while time.time() < deadline:
         # --- Cek auto-solve (token sudah ada) ---
         try:
@@ -189,47 +185,28 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         except Exception:
             pass
 
-        # --- Cari text "human/manusia" via Playwright get_by_text ---
-        # Playwright bisa cari text di shadow DOM yang querySelector tidak bisa
-        click_pos = None
-        for kw in keywords:
-            try:
-                # Cari element yang mengandung text keyword
-                # Tapi skip "Let us know" heading dan "Save email"
-                loc = page.get_by_text(kw, exact=False)
-                cnt = loc.count()
-                for i in range(cnt):
-                    try:
-                        el = loc.nth(i)
-                        txt = (el.text_content() or "").strip().lower()
-                        # Skip heading dan save email
-                        if 'let us know' in txt or 'beritahu kami' in txt:
-                            continue
-                        if 'save email' in txt or 'simpan email' in txt:
-                            continue
-                        # Cari element kecil (checkbox area, bukan heading)
-                        box = el.bounding_box()
-                        if box and box['width'] > 0 and box['height'] > 0 and box['height'] < 80:
-                            click_pos = {
-                                'x': box['x'] + 15,  # checkbox di kiri text
-                                'y': box['y'] + box['height'] / 2,
-                                'text': txt[:40],
-                            }
-                            break
-                    except Exception:
-                        continue
-                if click_pos:
-                    break
-            except Exception:
-                continue
+        # --- Strategy 1: Cari iframe Turnstile, klik coordinate (28,28) ---
+        # Ini metode awal yang terbukti work
+        turnstile_frame = None
+        for frame in page.frames:
+            if "challenges.cloudflare.com" in (frame.url or ""):
+                turnstile_frame = frame
+                break
 
-        if click_pos:
-            log.info("→ Klik Turnstile: '%s' di (%.0f, %.0f)",
-                     click_pos['text'], click_pos['x'], click_pos['y'])
-            try:
-                page.mouse.click(click_pos['x'], click_pos['y'])
-            except Exception:
-                pass
+        if turnstile_frame:
+            log.info("→ Turnstile iframe ditemukan: %s", turnstile_frame.url[:60])
+            # Klik coordinate (28,28) di dalam iframe
+            for coord in [
+                {"x": 28, "y": 28},
+                {"x": 20, "y": 20},
+                {"x": 35, "y": 35},
+            ]:
+                try:
+                    turnstile_frame.click("body", timeout=2000, position=coord)
+                    log.info("→ Turnstile diklik coordinate (%d,%d)", coord["x"], coord["y"])
+                    break
+                except Exception:
+                    continue
 
             # Tunggu 10 detik, cek setiap 2 detik
             for _ in range(5):
@@ -242,19 +219,122 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                         return el ? el.value : null;
                     }""")
                     if val and len(val) > 20:
-                        log.info("✓ Turnstile solved via text+click")
+                        log.info("✓ Turnstile solved via coordinate click")
                         return True
                 except Exception:
                     pass
 
-            # Kalau belum solved, klik lagi sedikit beda posisi
+        # --- Strategy 2: Cari iframe via JS, klik page.mouse ---
+        iframe_box = page.evaluate("""() => {
+            const iframe = document.querySelector(
+                'iframe[src*="challenges.cloudflare.com"]'
+            );
+            if (iframe) {
+                const rect = iframe.getBoundingClientRect();
+                return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+            }
+            return null;
+        }""")
+
+        if iframe_box and iframe_box["width"] > 0:
+            log.info("→ Turnstile iframe di (%.0f, %.0f) %dx%d",
+                     iframe_box["x"], iframe_box["y"],
+                     iframe_box["width"], iframe_box["height"])
+            # Klik page.mouse di posisi iframe (kiri-atas + 28)
+            click_x = iframe_box["x"] + 28
+            click_y = iframe_box["y"] + iframe_box["height"] / 2
+            try:
+                page.mouse.click(click_x, click_y)
+                log.info("→ Klik mouse iframe (%.0f, %.0f)", click_x, click_y)
+            except Exception:
+                pass
+
+            for _ in range(5):
+                time.sleep(2)
+                try:
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via mouse iframe click")
+                        return True
+                except Exception:
+                    pass
+
+        # --- Strategy 3: Cari element dengan text "human/manusia" ---
+        # Pakai page.evaluate (querySelectorAll) — metode awal
+        click_pos = page.evaluate("""() => {
+            const keywords = ['manusia', 'human', 'verify you are', 'sahkan'];
+            const all = document.querySelectorAll('*');
+            // Cari heading Y dulu
+            let headingY = -1;
+            for (const el of all) {
+                const txt = (el.textContent || '').toLowerCase().trim();
+                if ((txt.includes('let us know') || txt.includes('beritahu kami'))
+                    && txt.length < 60) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) {
+                        headingY = r.y + r.height;
+                        break;
+                    }
+                }
+            }
+            // Cari element dengan keyword DI BAWAH heading
+            for (const el of all) {
+                const txt = (el.textContent || '').toLowerCase().trim();
+                if (txt.includes('let us know') || txt.includes('beritahu kami')) continue;
+                if (txt.includes('save email') || txt.includes('simpan email')) continue;
+                for (const kw of keywords) {
+                    if (txt.includes(kw)) {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0 && r.height < 80) {
+                            if (headingY < 0 || r.y > headingY) {
+                                return {
+                                    x: r.x + 15,
+                                    y: r.y + r.height / 2,
+                                    text: txt.slice(0, 40),
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }""")
+
+        if click_pos:
+            log.info("→ Klik Turnstile text: '%s' di (%.0f, %.0f)",
+                     click_pos['text'], click_pos['x'], click_pos['y'])
+            try:
+                page.mouse.click(click_pos['x'], click_pos['y'])
+            except Exception:
+                pass
+
+            for _ in range(5):
+                time.sleep(2)
+                try:
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via text click")
+                        return True
+                except Exception:
+                    pass
+
+            # Retry klik
             time.sleep(3)
             try:
                 page.mouse.click(click_pos['x'] + 10, click_pos['y'])
                 log.info("→ Klik ulang (+10px)")
             except Exception:
                 pass
-
             for _ in range(5):
                 time.sleep(2)
                 try:
@@ -269,8 +349,10 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                         return True
                 except Exception:
                     pass
-        else:
-            log.warning("⚠ Text 'human/manusia' tidak ditemukan di halaman, tunggu...")
+
+        # Kalau semua strategy gagal, tunggu 5 detik
+        if not turnstile_frame and not iframe_box and not click_pos:
+            log.warning("⚠ Turnstile tidak ditemukan, tunggu...")
             time.sleep(5)
 
     # --- Last check ---
