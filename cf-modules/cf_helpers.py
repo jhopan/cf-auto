@@ -187,16 +187,42 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
 
         # --- Strategy A: Cari checkbox langsung di halaman (bukan iframe) ---
         # Cloudflare signup punya checkbox "Verify you are human" langsung di page
+        # PENTING: cari element checkbox/input, BUKAN text "Let us know you are human"
         checkbox_pos = page.evaluate("""() => {
-            // Cari element yang mengandung "verify you are human" atau "Let us know you are human"
-            const all = document.querySelectorAll('*');
+            // Cara 1: cari input[type=checkbox] yang visible dan dekat dengan text "human"
+            const checkboxes = document.querySelectorAll(
+                'input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"]'
+            );
+            for (const cb of checkboxes) {
+                const r = cb.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                    // Cek parent apakah dekat dengan text "human"
+                    let parent = cb.parentElement;
+                    for (let j = 0; j < 5; j++) {
+                        if (!parent) break;
+                        const txt = (parent.textContent || '').toLowerCase();
+                        if (txt.includes('human') || txt.includes('manusia')) {
+                            return {
+                                x: r.x + r.width / 2,
+                                y: r.y + r.height / 2,
+                                text: 'checkbox near human text',
+                            };
+                        }
+                        parent = parent.parentElement;
+                    }
+                }
+            }
+            // Cara 2: cari div/span/label dengan text persis "verify you are human"
+            // tapi BUKAN heading "Let us know you are human"
+            const all = document.querySelectorAll('label, span, div, a');
             for (const el of all) {
-                const txt = (el.textContent || '').toLowerCase().trim();
-                if (txt.includes('verify you are human') ||
-                    txt.includes('let us know you are human') ||
-                    txt.includes('sahkan anda manusia')) {
-                    const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0 && r.height < 100) {
+                // Hanya element kecil (checkbox-sized, bukan heading)
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0 && r.height < 60 && r.width < 400) {
+                    const txt = (el.textContent || '').toLowerCase().trim();
+                    // Cari text yang mengandung "verify" dan "human" tapi BUKAN "let us know"
+                    if ((txt.includes('verify') && txt.includes('human')) ||
+                        (txt.includes('sahkan') && txt.includes('manusia'))) {
                         return {
                             x: r.x + r.width / 2,
                             y: r.y + r.height / 2,
@@ -222,27 +248,32 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
 
             # Klik checkbox dengan PointerEvent (lebih reliable untuk React)
             try:
-                # Cari element checkbox spesifik
+                # Cari element checkbox spesifik (input/role=checkbox)
                 clicked = page.evaluate("""() => {
-                    const all = document.querySelectorAll('*');
-                    for (const el of all) {
-                        const txt = (el.textContent || '').toLowerCase().trim();
-                        if ((txt.includes('verify you are human') ||
-                             txt.includes('let us know you are human') ||
-                             txt.includes('sahkan anda manusia')) &&
-                            txt.length < 200) {
-                            const r = el.getBoundingClientRect();
-                            if (r.width > 0 && r.height > 0 && r.height < 100) {
-                                // Dispatch PointerEvent + MouseEvent
-                                el.dispatchEvent(new PointerEvent('pointerdown',
-                                    {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                el.dispatchEvent(new PointerEvent('pointerup',
-                                    {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
-                                el.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
-                                el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
-                                el.click();
-                                return 'clicked: ' + txt.slice(0, 30);
+                    // Cari input[type=checkbox] atau [role=checkbox] dekat text "human"
+                    const checkboxes = document.querySelectorAll(
+                        'input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"]'
+                    );
+                    for (const cb of checkboxes) {
+                        const r = cb.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0) {
+                            let parent = cb.parentElement;
+                            for (let j = 0; j < 5; j++) {
+                                if (!parent) break;
+                                const txt = (parent.textContent || '').toLowerCase();
+                                if (txt.includes('human') || txt.includes('manusia')) {
+                                    // Dispatch PointerEvent + MouseEvent
+                                    cb.dispatchEvent(new PointerEvent('pointerdown',
+                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                    cb.dispatchEvent(new PointerEvent('pointerup',
+                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                    cb.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+                                    cb.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+                                    cb.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                                    cb.click();
+                                    return 'clicked checkbox near human';
+                                }
+                                parent = parent.parentElement;
                             }
                         }
                     }
