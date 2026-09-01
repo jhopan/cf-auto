@@ -1,127 +1,186 @@
-# Cloudflare Workspace Helper
+# cf-auto
 
-Tool lokal untuk membantu workflow Cloudflare milik sendiri:
+Automation Cloudflare berbasis **Camoufox** (anti-detect browser) + **TempMailByJhopanstore** (temp mail self-hosted). Dari signup sampai dapat semua credential dalam 1 perintah.
 
-- menerima email pada domain milik sendiri;
-- membaca inbox melalui API temp-mail self-hosted;
-- membuka dashboard dalam browser visible;
-- memakai Cloudflare API Token scoped yang dibuat user sendiri;
-- menyimpan hasil lokal tanpa mengirim credential ke layanan lain.
+## Apa yang Dilakukan
 
-Project ini **bukan** alat mass-signup, bypass Turnstile/CAPTCHA, atau pengambilan Global API Key otomatis. Pembuatan akun, verifikasi identitas, dan challenge Cloudflare harus dilakukan user di UI resmi.
+1 akun Cloudflare lengkap, otomatis:
 
-## Status
+| Step | Modul | Hasil |
+|---|---|---|
+| 1 | Signup | Email + password + solve Turnstile |
+| 2 | Konfirmasi Email | Verify via workers-and-pages (tab sama) |
+| 3 | Global API Key | Kode verifikasi email + Turnstile → API Key |
+| 4 | Workers AI Token | Token `cfut_...` (nama: jhopanstore) |
+| 5 | Worker Token | Token "Edit Cloudflare Workers" |
 
-| Area | Status |
-|---|---|
-| Camoufox headed browser smoke test | Ada |
-| Temp mail mail.tm test adapter | Ada, hanya development |
-| Temp mail domain sendiri | Direncanakan |
-| Inbox API adapter | Direncanakan |
-| Cloudflare API Token workflow | Direncanakan |
-| Global API Key automation | Tidak didukung |
-| Turnstile bypass | Tidak didukung |
+Output 3 format (dedup, append, tidak hapus data lama):
 
-Lihat `docs/PRD.md`, `docs/ARCHITECTURE.md`, dan `docs/DEVELOPMENT.md`.
-
-## Prinsip desain
-
-1. **Domain sendiri.** Jangan bergantung pada domain publik disposable seperti mail.tm untuk workflow penting.
-2. **API Token scoped.** Pakai token dengan permission minimum. Jangan simpan Global API Key.
-3. **Manual trust boundary.** Signup, login, email verification, CAPTCHA, pembayaran, dan challenge dilakukan user.
-4. **Local secret storage.** `.env` dan output credential tidak masuk Git.
-5. **Browser visible.** Mode headed untuk langkah interaktif. Tidak ada klaim bypass challenge.
+- `accounts.json` — JSON lengkap semua field
+- `accounts.csv` — CSV untuk spreadsheet
+- `workers_ai.txt` — format `name|apiKey|accountId` per baris
 
 ## Struktur
 
 ```text
 cf-auto/
-├── cf_automation.py       # Eksperimen browser lama; jangan gunakan untuk bypass challenge
-├── temp_mail.py           # Adapter mail.tm development; akan diganti adapter self-hosted
-├── test_signup.py         # Smoke test lama; bukan flow produksi
+├── runner.py              # Jalankan flow lengkap (1 atau multi akun)
+├── menucfauto.py          # Menu interaktif atur semua config
+├── cf_config.py           # Load/save config + storage + wordlist
+├── config.json            # Config utama (gitignored)
+├── config.example.json    # Template config
+├── wordlist.csv           # Wordlist nama email (nomor,nama,status)
+├── install.sh             # Installer cross-platform
 ├── requirements.txt
-├── README.md
+├── cf-modules/
+│   ├── cf_helpers.py      # Shared: Turnstile solver, fill_input, dll
+│   ├── cf_signup.py       # Modul 1: Signup + Turnstile
+│   ├── cf_confirm_email.py# Modul 2: Konfirmasi email
+│   ├── cf_get_apikey.py   # Modul 3: Global API Key
+│   ├── cf_workers_ai.py   # Modul 4: Workers AI Token
+│   └── cf_worker_token.py # Modul 5: Worker Token
 └── docs/
-    ├── PRD.md
-    ├── ARCHITECTURE.md
-    ├── API_CONTRACT.md
-    ├── DEVELOPMENT.md
-    └── TESTING.md
 ```
 
-## Prasyarat
-
-- Windows 10/11 atau Linux.
-- Python 3.11+.
-- Akun Cloudflare milik user yang sudah verified.
-- Cloudflare API Token scoped yang dibuat manual.
-- Domain milik user dengan MX record valid.
-- Temp mail self-hosted atau email forwarder yang menerima domain tersebut.
-
-## Install development
+## Install
 
 ```bash
-cd C:\Users\ACER\cf-auto
-C:\Python314\python.exe -m pip install -r requirements.txt
-C:\Python314\python.exe -m camoufox fetch
+git clone https://github.com/jhopan/cf-auto.git
+cd cf-auto
+bash install.sh
 ```
 
-Windows: gunakan browser headed. Headless Camoufox dapat crash karena GPU/software compositor host.
+`install.sh` otomatis:
+- Deteksi OS (Windows git-bash / Linux / macOS)
+- Cari Python (skip alias palsu Microsoft Store)
+- `pip install -r requirements.txt` — camoufox[geoip], playwright, requests
+- `python -m camoufox fetch` — download binary browser
+- Linux: `playwright install-deps`
+- Copy `config.example.json` → `config.json`
 
-## Credential model
+## Setup Config
 
-Buat Cloudflare API Token di dashboard resmi:
-
-1. Profile → API Tokens → Create Token.
-2. Pilih template atau custom permission sesuai task.
-3. Batasi account dan zone yang memang dipakai.
-4. Simpan token ke `.env`, bukan source code atau `cf_accounts.json`.
-
-Contoh `.env` lokal:
-
-```dotenv
-CF_API_TOKEN=replace_me
-CF_ACCOUNT_ID=replace_me
-MAIL_API_BASE=https://mail.example.com/api
-MAIL_API_TOKEN=replace_me
-MAIL_DOMAIN=example.com
+```bash
+python menucfauto.py
 ```
 
-Jangan commit `.env`.
+Menu:
+```text
+1. Lihat config sekarang
+2. Atur Temp Mail (endpoint/domain/key)
+3. Atur Password (random/fixed)
+4. Atur Browser (headless/proxy)
+5. Atur Penamaan Email (format/wordlist)
+6. Atur Storage (file output)
+7. Lihat akun tersimpan
+8. Jalankan runner (1/multi/wordlist)
+9. Keluar
+```
 
-## Domain email sendiri
+### Penamaan Email (menu 5)
 
-Rekomendasi: deploy `TempMailByJhopanstore` pada VPS Ubuntu dengan domain baru milik sendiri. Domain harus punya:
+2 mode:
 
-- `A` record untuk UI/API;
-- `MX` record ke hostname mail;
-- port SMTP 25 terbuka inbound;
-- SPF dan DMARC;
-- TLS jika menyediakan UI publik.
+- **format** — template dengan placeholder:
+  - `{prefix}{rand8}` → `cfw2sf4s6q`
+  - Placeholder: `{prefix}` `{rand8}` `{rand6}` `{randnum}`
+- **wordlist** — baca `wordlist.csv`, kolom `nomor,nama,status`:
+  - Cari baris status kosong → pakai nama → tandai `used`
+  - Edit di Excel: tambah baris, kolom status kosong
+  - Sub-menu: lihat stats, lihat semua nama, reset status
+  - Kalau semua `used` → fallback random otomatis
 
-Cloudflare Tunnel tidak dapat menerima SMTP. Tunnel hanya cocok HTTP/HTTPS. MX harus menunjuk ke host dengan IP publik yang menerima port 25.
+### Storage (menu 6)
 
-Detail integrasi: `docs/ARCHITECTURE.md`.
+| File | Format |
+|---|---|
+| `accounts.json` | JSON array semua field |
+| `accounts.csv` | CSV header semua kolom |
+| `workers_ai.txt` | `name\|apiKey\|accountId` per baris, no header |
 
-## Pengembangan berikutnya
+Dedup by `email` — kalau sudah ada di salah satu file, skip di semua. Data lama tidak pernah dihapus.
+
+## Jalankan
+
+```bash
+# Via menu
+python menucfauto.py
+# → menu 8: pilih 1 akun / jumlah N / sampai wordlist habis
+
+# Atau langsung
+python runner.py               # 1 akun
+python runner.py --count 5    # 5 akun
+```
+
+Contoh hasil:
 
 ```text
-1. Deploy TempMailByJhopanstore + domain sendiri.
-2. Tambah self-hosted inbox adapter.
-3. Tambah API Token config validation.
-4. Tambah CLI inbox polling dan email-link extraction.
-5. Tambah Cloudflare API client untuk resource milik user.
+═══ Akun #1 SELESAI ═══
+  Email         : citra@renunganbot.qzz.io
+  Global API Key: cfk_2WNc...33e8
+  Workers AI    : cfut_1EsU828...ab8f
+  Worker Token  : cfut_3OWzlwI...5f96
+  Account ID    : 923926bdabb3b4f5af5df988cb4bffda
+  → accounts.json
+  → accounts.csv
+  → workers_ai.txt (format: name|apiKey|accountId)
 ```
 
-Rencana task lengkap: `docs/DEVELOPMENT.md`.
+## Config Reference
+
+`config.json`:
+
+```json
+{
+  "temp_mail": {
+    "base_url": "https://tempmail.example.com",
+    "api_key": "",
+    "domains": ["example.com"],
+    "prefix": "cf",
+    "email_format": "{prefix}{rand8}",
+    "naming_mode": "format",
+    "wordlist_file": "wordlist.csv"
+  },
+  "password": { "mode": "random", "fixed": "", "length": 16 },
+  "browser": { "headless": false, "proxy": "" },
+  "storage": {
+    "accounts_file": "accounts.json",
+    "csv_file": "accounts.csv",
+    "workers_ai_file": "workers_ai.txt",
+    "workers_ai_format": "{name}|{apiKey}|{accountId}",
+    "csv_enabled": true,
+    "workers_ai_enabled": true,
+    "append": true,
+    "dedupe_field": "email"
+  }
+}
+```
+
+Temp mail API butuh header `X-Email-API-Key`. Endpoint yang dipakai: `POST /api/inbox`, `GET /api/inbox/{email}/wait`, `DELETE /api/inbox/{email}`.
+
+## Per-OS Notes
+
+| OS | headless | Catatan |
+|---|---|---|
+| Windows | `false` (headed) | Headless Camoufox bisa crash GPU compositor |
+| Linux/VPS | `true` | Set via `menucfauto.py` menu 4 |
+| macOS | `false` | Sama Windows |
+
+Binary Camoufox tersimpan global di `AppData\Local\camoufox` (Windows) atau `~/.cache/camoufox` (Linux) — dipakai semua project, tidak per-user project.
 
 ## Security
 
-- Rotasi token jika pernah masuk terminal log, screenshot, Git, atau chat.
-- Gunakan `.gitignore` untuk `.env`, `*.token`, `cf_accounts.json`, `debug/`, dan result files.
-- Batasi token berdasarkan account/zone dan permission.
-- Jangan menjalankan mail server di host tanpa firewall, update security, dan backup database.
+- `config.json`, `accounts.json`, `accounts.csv`, `workers_ai.txt`, `runner_result.json` → **gitignored**
+- Jangan commit credential
+- Ganti API key temp mail jika bocor
+- Gunakan hanya untuk akun dan domain milik sendiri; ikuti ToS Cloudflare
 
-## License dan penggunaan
+## Troubleshooting
 
-Gunakan hanya untuk akun, domain, token, dan email yang Anda miliki atau punya izin eksplisit. Ikuti Cloudflare Terms dan kebijakan provider email.
+| Masalah | Solusi |
+|---|---|
+| `NS_ERROR_ABORT` saat navigasi | Retry otomatis 3x + jeda 5s; biasanya timing redirect CF |
+| Turnstile tidak solved | Solver klik iframe (28,28) → retry; kalau gagal tunggu manual |
+| `Tidak ada domain mail yang berhasil membuat inbox` | Cek `api_key` di config + server temp mail up |
+| `wordlist CSV harus punya kolom` | Format: header `nomor,nama,status` |
+| Login gagal | Password random tiap akun; cek `accounts.json` untuk password akun |
