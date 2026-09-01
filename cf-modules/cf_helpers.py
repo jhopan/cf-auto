@@ -194,10 +194,10 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
             const humanKeywords = ['human', 'manusia', '真人', '人間', '인간'];
             const verifyKeywords = ['verify', 'sahkan', '驗證', '確認', '확인'];
 
-            // Cara 1: cari input[type=checkbox] / [role=checkbox] yang visible
+            // Cara 1: cari div.cf-turnstile atau element checkbox yang visible
             // dan parent-nya ada text "human" (bahasa apa saja)
             const checkboxes = document.querySelectorAll(
-                'input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label'
+                'div.cf-turnstile, input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label, div[class*="turnstile"]'
             );
             for (const cb of checkboxes) {
                 const r = cb.getBoundingClientRect();
@@ -263,12 +263,13 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
 
             # Klik checkbox dengan PointerEvent (lebih reliable untuk React)
             try:
-                # Cari element checkbox spesifik (input/role=checkbox)
+                # Cari element checkbox spesifik (div.cf-turnstile / input / role=checkbox)
                 clicked = page.evaluate("""() => {
-                    // Cari input[type=checkbox] atau [role=checkbox] dekat text "human"
+                    // Cari div.cf-turnstile atau checkbox dekat text "human"
                     const checkboxes = document.querySelectorAll(
-                        'input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"]'
+                        'div.cf-turnstile, input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label, div[class*="turnstile"]'
                     );
+                    const humanKeywords = ['human', 'manusia', '真人', '人間', '인간'];
                     for (const cb of checkboxes) {
                         const r = cb.getBoundingClientRect();
                         if (r.width > 0 && r.height > 0) {
@@ -276,17 +277,24 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
                             for (let j = 0; j < 5; j++) {
                                 if (!parent) break;
                                 const txt = (parent.textContent || '').toLowerCase();
-                                if (txt.includes('human') || txt.includes('manusia')) {
-                                    // Dispatch PointerEvent + MouseEvent
-                                    cb.dispatchEvent(new PointerEvent('pointerdown',
-                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                    cb.dispatchEvent(new PointerEvent('pointerup',
-                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                    cb.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
-                                    cb.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
-                                    cb.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
-                                    cb.click();
-                                    return 'clicked checkbox near human';
+                                // Skip "Save email" checkbox
+                                if (txt.includes('save email') || txt.includes('simpan email')) {
+                                    break;
+                                }
+                                // Cek keyword human
+                                for (const kw of humanKeywords) {
+                                    if (txt.toLowerCase().includes(kw.toLowerCase())) {
+                                        // Dispatch PointerEvent + MouseEvent
+                                        cb.dispatchEvent(new PointerEvent('pointerdown',
+                                            {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                        cb.dispatchEvent(new PointerEvent('pointerup',
+                                            {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                                        cb.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+                                        cb.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+                                        cb.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                                        cb.click();
+                                        return 'clicked cf-turnstile near human';
+                                    }
                                 }
                                 parent = parent.parentElement;
                             }
