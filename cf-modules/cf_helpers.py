@@ -170,6 +170,12 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
     except Exception:
         log.warning("⚠ Turnstile iframe tidak ditemukan dalam 10s")
 
+    # Keyword "human" multi-bahasa
+    human_keywords = ['verify you are human', 'verifikasi bahwa',
+                      'sahkan anda manusia', 'sahkan kamu manusia',
+                      'verifikasi bahwa anda', 'verify you are',
+                      'human', 'manusia']
+
     while time.time() < deadline:
         # --- Cek auto-solve (token sudah ada) ---
         try:
@@ -185,227 +191,195 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         except Exception:
             pass
 
-        # --- Strategy A: Cari checkbox langsung di halaman (bukan iframe) ---
-        # Cloudflare signup punya checkbox "Verify you are human" langsung di page
-        # PENTING: cari element checkbox/input, BUKAN text "Let us know you are human"
-        # Support multi-bahasa: EN (human), ID (manusia), CN (真人), dll
-        checkbox_pos = page.evaluate("""() => {
-            // Daftar keyword "human" dalam berbagai bahasa
-            const humanKeywords = ['human', 'manusia', '真人', '人間', '인간'];
-            const verifyKeywords = ['verify', 'sahkan', '驗證', '確認', '확인'];
+        # --- Strategy: Screenshot → cari text "human/manusia" → klik koordinat ---
+        try:
+            import os as _os
+            debug_dir = _os.path.join(
+                _os.path.dirname(_os.path.abspath(__file__)), "..", "debug"
+            )
+            _os.makedirs(debug_dir, exist_ok=True)
+            ss_path = _os.path.join(debug_dir, "turnstile_find.png")
+            page.screenshot(path=ss_path)
 
-            // Cara 1: cari div.cf-turnstile atau element checkbox yang visible
-            // dan sibling/dekat dengan text "human" (bahasa apa saja)
-            const checkboxes = document.querySelectorAll(
-                'div.cf-turnstile, input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label, div[class*="turnstile"]'
-            );
-            for (const cb of checkboxes) {
-                const r = cb.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0) {
-                    // Cek parent HANYA 2 level (jangan sampai ke heading)
-                    let parent = cb.parentElement;
-                    for (let j = 0; j < 3; j++) {
-                        if (!parent) break;
-                        const txt = (parent.textContent || '').toLowerCase();
-                        // Skip "Save email" checkbox
-                        if (txt.includes('save email') || txt.includes('simpan email')) {
+            # Cari text "human" / "manusia" di screenshot via JS
+            # Cloudflare render checkbox sebagai widget — cari posisi widget
+            # dengan mencari element yang text-nya mengandung keyword
+            click_pos = page.evaluate("""(keywords) => {
+                // Cari SEMUA element yang text-nya mengandung keyword human
+                // lalu cari yang BUKAN heading (height < 80px)
+                // dan ada di bawah "Let us know" heading
+                const all = document.querySelectorAll('*');
+                let found = null;
+                let headingY = -1;
+
+                // Pertama: cari posisi Y heading "Let us know"
+                for (const el of all) {
+                    const txt = (el.textContent || '').toLowerCase().trim();
+                    if ((txt.includes('let us know') || txt.includes('beritahu kami'))
+                        && txt.length < 60) {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0) {
+                            headingY = r.y + r.height;
                             break;
                         }
-                        // Skip heading "Let us know you are human"
-                        if (txt.includes('let us know') || txt.includes('beritahu kami')) {
-                            break;
-                        }
-                        // Cek keyword human
-                        for (const kw of humanKeywords) {
-                            if (txt.toLowerCase().includes(kw.toLowerCase())) {
-                                return {
-                                    x: r.x + r.width / 2,
-                                    y: r.y + r.height / 2,
-                                    text: 'checkbox: ' + txt.slice(0, 40),
-                                };
-                            }
-                        }
-                        parent = parent.parentElement;
                     }
                 }
-            }
-            // Cara 2: cari div/span/label kecil dengan text "verify" + "human"
-            // tapi BUKAN heading "Let us know you are human"
-            const all = document.querySelectorAll('label, span, div, a');
-            for (const el of all) {
-                const r = el.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0 && r.height < 60 && r.width < 400) {
+
+                // Kedua: cari checkbox/widget DI BAWAH heading
+                for (const el of all) {
                     const txt = (el.textContent || '').toLowerCase().trim();
                     // Skip heading
                     if (txt.includes('let us know') || txt.includes('beritahu kami')) continue;
-                    // Cek verify + human (bahasa apa saja)
-                    let hasVerify = verifyKeywords.some(kw => txt.toLowerCase().includes(kw.toLowerCase()));
-                    let hasHuman = humanKeywords.some(kw => txt.toLowerCase().includes(kw.toLowerCase()));
-                    if (hasVerify && hasHuman) {
-                        return {
-                            x: r.x + r.width / 2,
-                            y: r.y + r.height / 2,
-                            text: txt.slice(0, 40),
-                        };
+                    // Skip save email
+                    if (txt.includes('save email') || txt.includes('simpan email')) continue;
+
+                    // Cek keyword
+                    let match = false;
+                    for (const kw of keywords) {
+                        if (txt.includes(kw)) {
+                            match = true;
+                            break;
+                        }
                     }
-                }
-            }
-            return null;
-        }""")
 
-        if checkbox_pos:
-            # Ambil screenshot sebelum klik
-            try:
-                debug_dir = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), "..", "debug"
-                )
-                os.makedirs(debug_dir, exist_ok=True)
-                page.screenshot(path=os.path.join(debug_dir, "turnstile_before_click.png"))
-                log.info("→ Screenshot disimpan: debug/turnstile_before_click.png")
-            except Exception:
-                pass
-
-            # Klik checkbox dengan PointerEvent (lebih reliable untuk React)
-            try:
-                # Cari element checkbox spesifik (div.cf-turnstile / input / role=checkbox)
-                clicked = page.evaluate("""() => {
-                    // Cari div.cf-turnstile atau checkbox dekat text "human"
-                    const checkboxes = document.querySelectorAll(
-                        'div.cf-turnstile, input[type="checkbox"], [role="checkbox"], [class*="checkbox"], [class*="ctp-checkbox"], label, div[class*="turnstile"]'
-                    );
-                    const humanKeywords = ['human', 'manusia', '真人', '人間', '인간'];
-                    for (const cb of checkboxes) {
-                        const r = cb.getBoundingClientRect();
-                        if (r.width > 0 && r.height > 0) {
-                            // Cek parent HANYA 3 level (jangan sampai ke heading)
-                            let parent = cb.parentElement;
-                            for (let j = 0; j < 3; j++) {
-                                if (!parent) break;
-                                const txt = (parent.textContent || '').toLowerCase();
-                                // Skip "Save email" checkbox
-                                if (txt.includes('save email') || txt.includes('simpan email')) {
-                                    break;
-                                }
-                                // Skip heading "Let us know you are human"
-                                if (txt.includes('let us know') || txt.includes('beritahu kami')) {
-                                    break;
-                                }
-                                // Cek keyword human
-                                for (const kw of humanKeywords) {
-                                    if (txt.toLowerCase().includes(kw.toLowerCase())) {
-                                        cb.dispatchEvent(new PointerEvent('pointerdown',
-                                            {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                        cb.dispatchEvent(new PointerEvent('pointerup',
-                                            {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                        cb.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
-                                        cb.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
-                                        cb.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
-                                        cb.click();
-                                        return 'clicked cf-turnstile: ' + txt.slice(0, 30);
-                                    }
-                                }
-                                parent = parent.parentElement;
+                    if (match) {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0 && r.height < 80) {
+                            // Harus di BAWAH heading (kalau heading ada)
+                            if (headingY < 0 || r.y > headingY) {
+                                // Klik di kiri element (posisi checkbox biasanya di kiri)
+                                return {
+                                    x: r.x + 20,
+                                    y: r.y + r.height / 2,
+                                    text: txt.slice(0, 40),
+                                    headingY: headingY,
+                                    elY: r.y,
+                                };
                             }
                         }
                     }
-                    return 'not found';
-                }""")
-                if 'clicked' in str(clicked):
-                    log.info("→ Klik checkbox via PointerEvent: %s", str(clicked)[:50])
-                else:
-                    # Fallback: page.mouse.click
-                    page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
-                    log.info("→ Klik checkbox via mouse (%.0f, %.0f)",
-                             checkbox_pos['x'], checkbox_pos['y'])
-            except Exception as e:
-                log.warning("⚠ Gagal klik checkbox: %s", str(e)[:60])
+                }
+
+                // Fallback: kalau tidak ada heading, cari element dengan keyword saja
+                for (const el of all) {
+                    const txt = (el.textContent || '').toLowerCase().trim();
+                    if (txt.includes('let us know') || txt.includes('beritahu kami')) continue;
+                    if (txt.includes('save email') || txt.includes('simpan email')) continue;
+
+                    let match = false;
+                    for (const kw of keywords) {
+                        if (txt.includes(kw)) {
+                            match = true;
+                            break;
+                        }
+                    }
+
+                    if (match) {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0 && r.height < 80 && r.width < 500) {
+                            return {
+                                x: r.x + 20,
+                                y: r.y + r.height / 2,
+                                text: txt.slice(0, 40),
+                                headingY: headingY,
+                                elY: r.y,
+                            };
+                        }
+                    }
+                }
+
+                return null;
+            }""", human_keywords)
+
+            if click_pos:
+                log.info("→ Klik Turnstile: '%s' di (%.0f, %.0f)",
+                         click_pos.get('text', '')[:40],
+                         click_pos['x'], click_pos['y'])
+
+                # Klik via page.mouse
                 try:
-                    page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
+                    page.mouse.click(click_pos['x'], click_pos['y'])
                 except Exception:
                     pass
 
-            # Tunggu 10 detik, cek setiap 2 detik
-            for _ in range(5):
-                time.sleep(2)
-                try:
-                    val = page.evaluate("""() => {
-                        const el = document.querySelector(
-                            'input[name="cf_challenge_response"]'
-                        );
-                        return el ? el.value : null;
-                    }""")
-                    if val and len(val) > 20:
-                        log.info("✓ Turnstile solved via checkbox click")
-                        return True
-                except Exception:
-                    pass
+                # Tunggu 10 detik, cek setiap 2 detik
+                for _ in range(5):
+                    time.sleep(2)
+                    try:
+                        val = page.evaluate("""() => {
+                            const el = document.querySelector(
+                                'input[name="cf_challenge_response"]'
+                            );
+                            return el ? el.value : null;
+                        }""")
+                        if val and len(val) > 20:
+                            log.info("✓ Turnstile solved via screenshot+click")
+                            return True
+                    except Exception:
+                        pass
 
-            # Kalau masih belum, tunggu 5 detik baru klik lagi
-            time.sleep(5)
-            try:
-                page.mouse.click(checkbox_pos['x'], checkbox_pos['y'])
-                log.info("→ Klik ulang checkbox (5s jeda)")
-            except Exception:
-                pass
-
-            for _ in range(5):
-                time.sleep(2)
-                try:
-                    val = page.evaluate("""() => {
-                        const el = document.querySelector(
-                            'input[name="cf_challenge_response"]'
-                        );
-                        return el ? el.value : null;
-                    }""")
-                    if val and len(val) > 20:
-                        log.info("✓ Turnstile solved via retry checkbox")
-                        return True
-                except Exception:
-                    pass
-
-        # --- Strategy B: Klik via page.mouse di posisi iframe (kalau ada iframe) ---
-        iframe_box = page.evaluate("""() => {
-            const iframe = document.querySelector(
-                'iframe[src*="challenges.cloudflare.com"]'
-            );
-            if (iframe) {
-                const rect = iframe.getBoundingClientRect();
-                return {
-                    x: rect.x, y: rect.y,
-                    width: rect.width, height: rect.height
-                };
-            }
-            return null;
-        }""")
-
-        if iframe_box and iframe_box["width"] > 0:
-            click_x = iframe_box["x"] + 28
-            click_y = iframe_box["y"] + iframe_box["height"] / 2
-            try:
-                page.mouse.click(click_x, click_y)
-                log.info("→ Turnstile diklik mouse iframe (%.0f, %.0f)", click_x, click_y)
-            except Exception:
-                pass
-
-            for _ in range(5):
-                time.sleep(2)
-                try:
-                    val = page.evaluate("""() => {
-                        const el = document.querySelector(
-                            'input[name="cf_challenge_response"]'
-                        );
-                        return el ? el.value : null;
-                    }""")
-                    if val and len(val) > 20:
-                        log.info("✓ Turnstile solved via iframe click")
-                        return True
-                except Exception:
-                    pass
-        else:
-            # Tidak ada iframe dan tidak ada checkbox → tunggu
-            if not checkbox_pos:
-                log.warning("⚠ Tidak ada checkbox/iframe Turnstile, tunggu...")
+                # Kalau belum solved, klik lagi sedikit beda posisi
                 time.sleep(5)
+                try:
+                    page.mouse.click(click_pos['x'] + 10, click_pos['y'])
+                    log.info("→ Klik ulang Turnstile (+10px)")
+                except Exception:
+                    pass
+
+                for _ in range(5):
+                    time.sleep(2)
+                    try:
+                        val = page.evaluate("""() => {
+                            const el = document.querySelector(
+                                'input[name="cf_challenge_response"]'
+                            );
+                            return el ? el.value : null;
+                        }""")
+                        if val and len(val) > 20:
+                            log.info("✓ Turnstile solved via retry click")
+                            return True
+                    except Exception:
+                        pass
+            else:
+                # Tidak ada checkbox/iframe → cek iframe fallback
+                iframe_box = page.evaluate("""() => {
+                    const iframe = document.querySelector(
+                        'iframe[src*="challenges.cloudflare.com"]'
+                    );
+                    if (iframe) {
+                        const rect = iframe.getBoundingClientRect();
+                        return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+                    }
+                    return null;
+                }""")
+                if iframe_box and iframe_box["width"] > 0:
+                    click_x = iframe_box["x"] + 28
+                    click_y = iframe_box["y"] + iframe_box["height"] / 2
+                    try:
+                        page.mouse.click(click_x, click_y)
+                        log.info("→ Turnstile diklik iframe (%.0f, %.0f)", click_x, click_y)
+                    except Exception:
+                        pass
+                    for _ in range(5):
+                        time.sleep(2)
+                        try:
+                            val = page.evaluate("""() => {
+                                const el = document.querySelector(
+                                    'input[name="cf_challenge_response"]'
+                                );
+                                return el ? el.value : null;
+                            }""")
+                            if val and len(val) > 20:
+                                log.info("✓ Turnstile solved via iframe click")
+                                return True
+                        except Exception:
+                            pass
+                else:
+                    log.warning("⚠ Tidak ada checkbox/iframe Turnstile, tunggu...")
+                    time.sleep(5)
+        except Exception as e:
+            log.warning("⚠ Error Turnstile: %s", str(e)[:80])
+            time.sleep(5)
 
     # --- Last check ---
     try:
