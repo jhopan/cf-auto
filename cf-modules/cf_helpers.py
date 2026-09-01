@@ -160,21 +160,9 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
     log.info("⏳ Menunggu Turnstile solve...")
     deadline = time.time() + timeout
 
-    # Wait untuk iframe Turnstile muncul
-    try:
-        page.wait_for_selector(
-            'iframe[src*="challenges.cloudflare.com"]',
-            timeout=10000, state="attached",
-        )
-        log.info("→ Turnstile iframe ditemukan")
-    except Exception:
-        log.warning("⚠ Turnstile iframe tidak ditemukan dalam 10s")
-
     # Keyword "human" multi-bahasa
-    human_keywords = ['verify you are human', 'verifikasi bahwa',
-                      'sahkan anda manusia', 'sahkan kamu manusia',
-                      'verifikasi bahwa anda', 'verify you are',
-                      'human', 'manusia']
+    keywords = ['manusia', 'human', 'Verify you are human', 'Verifikasi',
+                'sahkan', 'verify']
 
     while time.time() < deadline:
         # --- Cek auto-solve (token sudah ada) ---
@@ -191,194 +179,98 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         except Exception:
             pass
 
-        # --- Strategy: Screenshot → cari text "human/manusia" → klik koordinat ---
+        # --- Screenshot untuk debug ---
         try:
-            import os as _os
-            debug_dir = _os.path.join(
-                _os.path.dirname(_os.path.abspath(__file__)), "..", "debug"
+            debug_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "debug"
             )
-            _os.makedirs(debug_dir, exist_ok=True)
-            ss_path = _os.path.join(debug_dir, "turnstile_find.png")
-            page.screenshot(path=ss_path)
+            os.makedirs(debug_dir, exist_ok=True)
+            page.screenshot(path=os.path.join(debug_dir, "turnstile_find.png"))
+        except Exception:
+            pass
 
-            # Cari text "human" / "manusia" di screenshot via JS
-            # Cloudflare render checkbox sebagai widget — cari posisi widget
-            # dengan mencari element yang text-nya mengandung keyword
-            click_pos = page.evaluate("""(keywords) => {
-                // Cari SEMUA element yang text-nya mengandung keyword human
-                // lalu cari yang BUKAN heading (height < 80px)
-                // dan ada di bawah "Let us know" heading
-                const all = document.querySelectorAll('*');
-                let found = null;
-                let headingY = -1;
-
-                // Pertama: cari posisi Y heading "Let us know"
-                for (const el of all) {
-                    const txt = (el.textContent || '').toLowerCase().trim();
-                    if ((txt.includes('let us know') || txt.includes('beritahu kami'))
-                        && txt.length < 60) {
-                        const r = el.getBoundingClientRect();
-                        if (r.width > 0 && r.height > 0) {
-                            headingY = r.y + r.height;
-                            break;
-                        }
-                    }
-                }
-
-                // Kedua: cari checkbox/widget DI BAWAH heading
-                for (const el of all) {
-                    const txt = (el.textContent || '').toLowerCase().trim();
-                    // Skip heading
-                    if (txt.includes('let us know') || txt.includes('beritahu kami')) continue;
-                    // Skip save email
-                    if (txt.includes('save email') || txt.includes('simpan email')) continue;
-
-                    // Cek keyword
-                    let match = false;
-                    for (const kw of keywords) {
-                        if (txt.includes(kw)) {
-                            match = true;
-                            break;
-                        }
-                    }
-
-                    if (match) {
-                        const r = el.getBoundingClientRect();
-                        if (r.width > 0 && r.height > 0 && r.height < 80) {
-                            // Harus di BAWAH heading (kalau heading ada)
-                            if (headingY < 0 || r.y > headingY) {
-                                // Klik di kiri element (posisi checkbox biasanya di kiri)
-                                return {
-                                    x: r.x + 20,
-                                    y: r.y + r.height / 2,
-                                    text: txt.slice(0, 40),
-                                    headingY: headingY,
-                                    elY: r.y,
-                                };
+        # --- Cari text "human/manusia" via Playwright get_by_text ---
+        # Playwright bisa cari text di shadow DOM yang querySelector tidak bisa
+        click_pos = None
+        for kw in keywords:
+            try:
+                # Cari element yang mengandung text keyword
+                # Tapi skip "Let us know" heading dan "Save email"
+                loc = page.get_by_text(kw, exact=False)
+                cnt = loc.count()
+                for i in range(cnt):
+                    try:
+                        el = loc.nth(i)
+                        txt = (el.text_content() or "").strip().lower()
+                        # Skip heading dan save email
+                        if 'let us know' in txt or 'beritahu kami' in txt:
+                            continue
+                        if 'save email' in txt or 'simpan email' in txt:
+                            continue
+                        # Cari element kecil (checkbox area, bukan heading)
+                        box = el.bounding_box()
+                        if box and box['width'] > 0 and box['height'] > 0 and box['height'] < 80:
+                            click_pos = {
+                                'x': box['x'] + 15,  # checkbox di kiri text
+                                'y': box['y'] + box['height'] / 2,
+                                'text': txt[:40],
                             }
-                        }
-                    }
-                }
+                            break
+                    except Exception:
+                        continue
+                if click_pos:
+                    break
+            except Exception:
+                continue
 
-                // Fallback: kalau tidak ada heading, cari element dengan keyword saja
-                for (const el of all) {
-                    const txt = (el.textContent || '').toLowerCase().trim();
-                    if (txt.includes('let us know') || txt.includes('beritahu kami')) continue;
-                    if (txt.includes('save email') || txt.includes('simpan email')) continue;
+        if click_pos:
+            log.info("→ Klik Turnstile: '%s' di (%.0f, %.0f)",
+                     click_pos['text'], click_pos['x'], click_pos['y'])
+            try:
+                page.mouse.click(click_pos['x'], click_pos['y'])
+            except Exception:
+                pass
 
-                    let match = false;
-                    for (const kw of keywords) {
-                        if (txt.includes(kw)) {
-                            match = true;
-                            break;
-                        }
-                    }
-
-                    if (match) {
-                        const r = el.getBoundingClientRect();
-                        if (r.width > 0 && r.height > 0 && r.height < 80 && r.width < 500) {
-                            return {
-                                x: r.x + 20,
-                                y: r.y + r.height / 2,
-                                text: txt.slice(0, 40),
-                                headingY: headingY,
-                                elY: r.y,
-                            };
-                        }
-                    }
-                }
-
-                return null;
-            }""", human_keywords)
-
-            if click_pos:
-                log.info("→ Klik Turnstile: '%s' di (%.0f, %.0f)",
-                         click_pos.get('text', '')[:40],
-                         click_pos['x'], click_pos['y'])
-
-                # Klik via page.mouse
+            # Tunggu 10 detik, cek setiap 2 detik
+            for _ in range(5):
+                time.sleep(2)
                 try:
-                    page.mouse.click(click_pos['x'], click_pos['y'])
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via text+click")
+                        return True
                 except Exception:
                     pass
 
-                # Tunggu 10 detik, cek setiap 2 detik
-                for _ in range(5):
-                    time.sleep(2)
-                    try:
-                        val = page.evaluate("""() => {
-                            const el = document.querySelector(
-                                'input[name="cf_challenge_response"]'
-                            );
-                            return el ? el.value : null;
-                        }""")
-                        if val and len(val) > 20:
-                            log.info("✓ Turnstile solved via screenshot+click")
-                            return True
-                    except Exception:
-                        pass
+            # Kalau belum solved, klik lagi sedikit beda posisi
+            time.sleep(3)
+            try:
+                page.mouse.click(click_pos['x'] + 10, click_pos['y'])
+                log.info("→ Klik ulang (+10px)")
+            except Exception:
+                pass
 
-                # Kalau belum solved, klik lagi sedikit beda posisi
-                time.sleep(5)
+            for _ in range(5):
+                time.sleep(2)
                 try:
-                    page.mouse.click(click_pos['x'] + 10, click_pos['y'])
-                    log.info("→ Klik ulang Turnstile (+10px)")
+                    val = page.evaluate("""() => {
+                        const el = document.querySelector(
+                            'input[name="cf_challenge_response"]'
+                        );
+                        return el ? el.value : null;
+                    }""")
+                    if val and len(val) > 20:
+                        log.info("✓ Turnstile solved via retry")
+                        return True
                 except Exception:
                     pass
-
-                for _ in range(5):
-                    time.sleep(2)
-                    try:
-                        val = page.evaluate("""() => {
-                            const el = document.querySelector(
-                                'input[name="cf_challenge_response"]'
-                            );
-                            return el ? el.value : null;
-                        }""")
-                        if val and len(val) > 20:
-                            log.info("✓ Turnstile solved via retry click")
-                            return True
-                    except Exception:
-                        pass
-            else:
-                # Tidak ada checkbox/iframe → cek iframe fallback
-                iframe_box = page.evaluate("""() => {
-                    const iframe = document.querySelector(
-                        'iframe[src*="challenges.cloudflare.com"]'
-                    );
-                    if (iframe) {
-                        const rect = iframe.getBoundingClientRect();
-                        return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
-                    }
-                    return null;
-                }""")
-                if iframe_box and iframe_box["width"] > 0:
-                    click_x = iframe_box["x"] + 28
-                    click_y = iframe_box["y"] + iframe_box["height"] / 2
-                    try:
-                        page.mouse.click(click_x, click_y)
-                        log.info("→ Turnstile diklik iframe (%.0f, %.0f)", click_x, click_y)
-                    except Exception:
-                        pass
-                    for _ in range(5):
-                        time.sleep(2)
-                        try:
-                            val = page.evaluate("""() => {
-                                const el = document.querySelector(
-                                    'input[name="cf_challenge_response"]'
-                                );
-                                return el ? el.value : null;
-                            }""")
-                            if val and len(val) > 20:
-                                log.info("✓ Turnstile solved via iframe click")
-                                return True
-                        except Exception:
-                            pass
-                else:
-                    log.warning("⚠ Tidak ada checkbox/iframe Turnstile, tunggu...")
-                    time.sleep(5)
-        except Exception as e:
-            log.warning("⚠ Error Turnstile: %s", str(e)[:80])
+        else:
+            log.warning("⚠ Text 'human/manusia' tidak ditemukan di halaman, tunggu...")
             time.sleep(5)
 
     # --- Last check ---
