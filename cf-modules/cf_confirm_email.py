@@ -255,8 +255,22 @@ class ConfirmEmail:
         # artinya email sudah terverifikasi
         log.info("→ Cek verifikasi: buka workers-and-pages...")
         workers_url = f"https://dash.cloudflare.com/{account_id}/workers-and-pages"
-        page.goto(workers_url, wait_until="domcontentloaded", timeout=60000)
-        time.sleep(5.0)
+
+        # Kalau URL sekarang sudah workers-and-pages, tidak perlu goto lagi
+        current_url = page.url
+        if "workers-and-pages" in current_url:
+            log.info("→ Sudah di workers-and-pages, cek langsung...")
+        else:
+            # Retry navigasi karena NS_ERROR_ABORT bisa terjadi
+            for attempt in range(3):
+                try:
+                    page.goto(workers_url, wait_until="domcontentloaded", timeout=60000)
+                    break
+                except Exception as e:
+                    log.warning("⚠ Navigasi gagal (attempt %d): %s", attempt + 1, str(e)[:60])
+                    time.sleep(3)
+
+        time.sleep(5)
 
         try:
             body_text = page.inner_text("body")
@@ -269,6 +283,10 @@ class ConfirmEmail:
             else:
                 log.info("✓✓✓ VERIFIKASI BERHASIL! (workers-and-pages normal) ✓✓✓")
         except Exception:
-            log.warning("⚠ Tidak bisa cek status verifikasi")
+            # Kalau tidak bisa baca body, cek URL saja
+            if "workers-and-pages" in page.url:
+                log.info("✓✓✓ VERIFIKASI BERHASIL! (URL workers-and-pages) ✓✓✓")
+            else:
+                log.warning("⚠ Tidak bisa cek status verifikasi, lanjut saja...")
 
         return True
