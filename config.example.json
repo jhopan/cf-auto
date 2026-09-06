@@ -6,7 +6,7 @@
     "prefix": "cf",
     "email_format": "{prefix}{rand8}",
     "naming_mode": "format",
-    "wordlist_file": "",
+    "wordlist_file": "wordlist.csv",
     "wordlist_index": 0
   },
   "password": {
@@ -15,7 +15,7 @@
     "length": 16
   },
   "browser": {
-    "headless": false,
+    "headless": "virtual",
     "proxy": ""
   },
   "storage": {

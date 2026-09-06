@@ -96,7 +96,7 @@ def show_config(cfg):
     else:
         print(f"  Length     : {cfg['password']['length']}")
     print(f"Browser")
-    print(f"  Headless   : {cfg['browser']['headless']}")
+    print(f"  Mode       : {cfg['browser']['headless']} (visible/headless/virtual)")
     print(f"  Proxy      : {cfg['browser']['proxy'] or '(tidak ada)'}")
     print(f"Storage")
     print(f"  File JSON    : {cfg['storage']['accounts_file']}")
@@ -143,7 +143,19 @@ def menu_browser(cfg):
     print("\n  SETUP BROWSER")
     divider()
     br = cfg["browser"]
-    br["headless"] = ask_bool("Headless (tidak disarankan di Windows)", br["headless"])
+    print("  Mode browser:")
+    print("    visible  = headed, window kelihatan (Windows)")
+    print("    headless = tanpa window (Turnstile lebih sulit)")
+    print("    virtual  = Xvfb otomatis (Linux/VPS — disarankan)")
+    mode = ask("Mode (visible/headless/virtual)", 
+               "virtual" if br.get("headless") == "virtual" 
+               else ("headless" if br.get("headless") in (True, "true") else "visible")).lower()
+    if mode == "virtual":
+        br["headless"] = "virtual"
+    elif mode in ("headless", "true"):
+        br["headless"] = True
+    else:
+        br["headless"] = False
     br["proxy"] = ask("Proxy (kosongkan jika tidak ada)", br["proxy"])
     save_config(cfg)
     print("  ✅ Config browser disimpan.")

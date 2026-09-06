@@ -79,6 +79,13 @@ log "Download binary Camoufox browser..."
 if [ "$OS_NAME" = "linux" ]; then
     log "Install Playwright system dependencies (Linux)..."
     "$PYTHON" -m playwright install-deps || warn "playwright install-deps gagal (jalankan manual: playwright install-deps)"
+    # Xvfb untuk headless='virtual' Camoufox (virtual display)
+    if ! command -v Xvfb >/dev/null 2>&1; then
+        log "Install Xvfb (untuk headless='virtual')..."
+        (sudo apt-get install -y xvfb 2>/dev/null || sudo dnf install -y xorg-x11-server-Xvfb 2>/dev/null || warn "Xvfb gagal di-install. Install manual: apt install xvfb")
+    else
+        log "Xvfb sudah terinstall."
+    fi
 fi
 
 # ------------------------------------------------------------

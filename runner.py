@@ -147,8 +147,17 @@ def create_one(cfg: dict, args, idx: int):
     log.info("  Password : %s", cf_password)
 
     # 2. Launch Camoufox
+    # headless: false (headed) | true (headless) | "virtual" (Xvfb otomatis, Linux)
+    headless_val = cfg["browser"]["headless"]
+    if headless_val == "virtual":
+        headless_val = "virtual"  # Camoufox: headless='virtual' → Xvfb
+    elif headless_val in (True, "true", 1):
+        headless_val = True
+    else:
+        headless_val = False
+
     launch_kwargs = {
-        "headless": cfg["browser"]["headless"],
+        "headless": headless_val,
         "humanize": True,
         "disable_coop": True,
         "geoip": True,
@@ -158,6 +167,9 @@ def create_one(cfg: dict, args, idx: int):
     proxy = args.proxy or cfg["browser"]["proxy"]
     if proxy:
         launch_kwargs["proxy"] = {"server": proxy}
+
+    if headless_val == "virtual":
+        log.info("→ Mode: virtual display (Xvfb otomatis — Linux only)")
 
     with Camoufox(**launch_kwargs) as browser:
         page = browser.new_page()
