@@ -161,6 +161,20 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
     deadline = time.time() + timeout
 
     while time.time() < deadline:
+        # --- PENTING: pastikan window visible (jangan minimize!) ---
+        # Page Visibility API: kalau hidden, Turnstile suspend challenge
+        # (requestAnimationFrame berhenti), klik tidak di-process.
+        try:
+            state = page.evaluate(
+                "() => document.visibilityState + '/' + document.hasFocus()"
+            )
+            if "hidden" in state:
+                page.bring_to_front()
+                log.info("→ Window hidden, di-restore otomatis (jangan minimize!)")
+                time.sleep(2)
+        except Exception:
+            pass
+
         # --- Cek auto-solve (token sudah ada) ---
         try:
             val = page.evaluate("""() => {
