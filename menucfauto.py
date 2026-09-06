@@ -143,19 +143,52 @@ def menu_browser(cfg):
     print("\n  SETUP BROWSER")
     divider()
     br = cfg["browser"]
+
+    # Deteksi OS untuk rekomendasi
+    is_windows = os.name == "nt"
+
+    # Nilai sekarang → nomor mode
+    current = br.get("headless")
+    if current == "virtual":
+        current_num = 3
+    elif current in (True, "true"):
+        current_num = 2
+    else:
+        current_num = 1
+
     print("  Mode browser:")
-    print("    visible  = headed, window kelihatan (Windows)")
-    print("    headless = tanpa window (Turnstile lebih sulit)")
-    print("    virtual  = Xvfb otomatis (Linux/VPS — disarankan)")
-    mode = ask("Mode (visible/headless/virtual)", 
-               "virtual" if br.get("headless") == "virtual" 
-               else ("headless" if br.get("headless") in (True, "true") else "visible")).lower()
-    if mode == "virtual":
+    print("    1. visible  = headed, window kelihatan")
+    print("       → Windows / mau lihat browser jalan")
+    print("    2. headless = tanpa window")
+    print("       → Tidak disarankan (Turnstile lebih sulit)")
+    print("    3. virtual  = Xvfb otomatis")
+    print("       → Linux/VPS/home server (disarankan)")
+    divider()
+    if is_windows:
+        print("  ⚠ Anda di Windows: virtual tidak jalan, pilih 1")
+    else:
+        print("  💡 Linux terdeteksi: pilih 3 (virtual)")
+
+    while True:
+        choice = input(f"  Pilih mode [1-3] ({current_num}): ").strip()
+        if choice == "":
+            choice = str(current_num)
+        if choice in ("1", "2", "3"):
+            break
+        print("  ❌ Pilih 1, 2, atau 3.")
+
+    if choice == "3":
         br["headless"] = "virtual"
-    elif mode in ("headless", "true"):
+        print("  → Mode: virtual (Xvfb otomatis)")
+        if is_windows:
+            print("  ⚠ Windows tidak support Xvfb — mode ini hanya jalan di Linux!")
+    elif choice == "2":
         br["headless"] = True
+        print("  → Mode: headless")
     else:
         br["headless"] = False
+        print("  → Mode: visible")
+
     br["proxy"] = ask("Proxy (kosongkan jika tidak ada)", br["proxy"])
     save_config(cfg)
     print("  ✅ Config browser disimpan.")
