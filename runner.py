@@ -188,10 +188,11 @@ def create_one(cfg: dict, args, idx: int):
         time.sleep(2)
         launch_kwargs["headless"] = False
         launch_kwargs["virtual_display"] = ":99"
-        # Set viewport sesuai resolusi Xvfb — tanpa ini Playwright pakai
-        # default 1280x720 yang menyebabkan koordinat elemen bergeser
-        # relatif ke screenshot/dump posisi (1366 wide di dump = Xvfb 1280)
-        launch_kwargs["screen"] = {"width": 1920, "height": 1080}
+        # Window size via Firefox prefs — viewport set nanti di page
+        # (Camoufox tidak terima param 'screen' seperti Playwright context)
+        launch_kwargs["firefox_user_prefs"] = {
+            "privacy.resistFingerprinting.windowSize": "1920x1080",
+        }
     else:
         launch_kwargs["headless"] = headless_val
 
