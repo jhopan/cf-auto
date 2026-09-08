@@ -188,6 +188,10 @@ def create_one(cfg: dict, args, idx: int):
         time.sleep(2)
         launch_kwargs["headless"] = False
         launch_kwargs["virtual_display"] = ":99"
+        # Set viewport sesuai resolusi Xvfb — tanpa ini Playwright pakai
+        # default 1280x720 yang menyebabkan koordinat elemen bergeser
+        # relatif ke screenshot/dump posisi (1366 wide di dump = Xvfb 1280)
+        launch_kwargs["screen"] = {"width": 1920, "height": 1080}
     else:
         launch_kwargs["headless"] = headless_val
 

@@ -136,4 +136,11 @@ log "  Cara atur config : python menucfauto.py"
 log "  Jalankan akun    : python runner.py"
 log "  (atau) --count N : python runner.py --count 3"
 echo ""
-log "Tips: di VPS/Linux set headless=true di config.json (menu 4)."
+if [ "$OS_NAME" = "linux" ]; then
+    if [ "$PEP668" = "1" ]; then
+        log "Linux + venv: jalankan dengan ./venv/bin/python runner.py"
+    fi
+    log "Rekomendasi mode browser: 'virtual' (Xvfb 1920x1080) — menu 4 → pilih 3"
+else
+    log "Windows: mode browser 'visible' (headless='false' di config.json)"
+fi
