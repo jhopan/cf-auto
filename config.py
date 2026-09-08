@@ -1,5 +1,5 @@
 """
-cf_config.py — Helper untuk load/save config.json dan accounts.json.
+config.py — Helper untuk load/save config.json dan accounts.json.
 
 Mendukung 3 format output:
   1. accounts.json  — semua field (JSON, dedup, append)

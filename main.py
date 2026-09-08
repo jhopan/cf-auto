@@ -1,5 +1,5 @@
 """
-runner.py — Jalankan alur pembuatan 1 akun Cloudflare lengkap.
+main.py — Jalankan alur pembuatan 1 akun Cloudflare lengkap.
 
 Membaca config.json (diatur via menu.py) dan menyimpan hasil
 ke accounts.json (append, tidak menimpa).
@@ -36,7 +36,7 @@ def _import_module(name):
     spec.loader.exec_module(mod)
     return mod
 
-from cf_config import load_config, append_account, generate_username
+from config.py import load_config, append_account, generate_username
 
 _h = _import_module("cf_helpers")
 log = _h.log

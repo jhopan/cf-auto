@@ -68,8 +68,8 @@ python menu.py    # isi API key temp mail + pilih mode browser
 Buat akun:
 
 ```bash
-python runner.py --count 1     # 1 akun
-python runner.py --count 5     # 5 akun
+python main.py --count 1     # 1 akun
+python main.py --count 5     # 5 akun
 ```
 
 Contoh output:
@@ -206,7 +206,7 @@ Header: `X-Email-API-Key: <api_key>`
 | Xvfb | — | ✅ auto-install via install.sh |
 | Python deps | global | venv otomatis (PEP 668) |
 | Minimize window | ❌ jangan (Turnstile suspend) | tidak relevan — virtual selalu visible |
-| Jalankan | `python runner.py` | `./venv/bin/python runner.py` |
+| Jalankan | `python main.py` | `./venv/bin/python main.py` |
 
 ## 🏠 Deploy di Home Server
 
@@ -215,7 +215,7 @@ ssh server-anda
 git clone https://github.com/jhopan/cf-auto.git && cd cf-auto
 bash install.sh            # venv + camoufox + Xvfb + playwright deps
 python menu.py       # menu 2: api key → menu 4: pilih 3 (virtual)
-./venv/bin/python runner.py --count 10
+./venv/bin/python main.py --count 10
 ```
 
 Bonus: IP residential rumah = trust Cloudflare tinggi = Turnstile lebih ramah daripada VPS datacenter.
@@ -236,9 +236,9 @@ Bonus: IP residential rumah = trust Cloudflare tinggi = Turnstile lebih ramah da
 
 ```
 cf-auto/
-├── runner.py              # Flow lengkap 5 modul
+├── main.py              # Flow lengkap 5 modul
 ├── menu.py          # Super menu interaktif
-├── cf_config.py           # Config + storage + wordlist engine
+├── config.py           # Config + storage + wordlist engine
 ├── install.sh             # Installer cross-platform
 ├── config.example.json    # Template config
 ├── wordlist.csv           # Nama email (nomor,nama,status)

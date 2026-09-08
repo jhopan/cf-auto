@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from cf_config import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
+from config.py import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
 
 CLEAR = "cls" if os.name == "nt" else "clear"
 
@@ -336,7 +336,7 @@ def menu_run(cfg):
     # Panggil runner dengan --count
     import subprocess
     python = sys.executable
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner.py")
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
     cmd = [python, "-B", script, "--count", str(count)]
     print(f"  Menjalankan: {' '.join(cmd)}")
     print()

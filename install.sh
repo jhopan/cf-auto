@@ -133,12 +133,12 @@ fi
 echo ""
 log "═══ INSTALL SELESAI ═══"
 log "  Cara atur config : python menu.py"
-log "  Jalankan akun    : python runner.py"
-log "  (atau) --count N : python runner.py --count 3"
+log "  Jalankan akun    : python main.py"
+log "  (atau) --count N : python main.py --count 3"
 echo ""
 if [ "$OS_NAME" = "linux" ]; then
     if [ "$PEP668" = "1" ]; then
-        log "Linux + venv: jalankan dengan ./venv/bin/python runner.py"
+        log "Linux + venv: jalankan dengan ./venv/bin/python main.py"
     fi
     log "Rekomendasi mode browser: 'virtual' (Xvfb 1920x1080) — menu 4 → pilih 3"
 else
