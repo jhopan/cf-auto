@@ -42,7 +42,7 @@ flowchart LR
 ```
 cf-auto/
 ├── accounts.json     ← JSON lengkap (semua field)
-├── accounts.tsv      ← CSV untuk Excel/Sheets
+├── accounts.csv      ← CSV untuk Excel/Sheets
 └── workers_ai.txt    ← name|apiKey|accountId (siap copas)
 ```
 
@@ -82,7 +82,7 @@ Contoh output:
   Worker Token  : cfut_vG2Y...xxxx
   Account ID    : aff95feb33528e6f04cdee01100d3bdf
   → accounts.json
-  → accounts.tsv
+  → accounts.csv
   → workers_ai.txt (format: name|apiKey|accountId)
 ```
 
@@ -171,7 +171,7 @@ nomor,nama,status
   "browser": { "headless": "virtual", "proxy": "" },
   "storage": {
     "accounts_file": "accounts.json",
-    "csv_file": "accounts.tsv",
+    "csv_file": "accounts.csv",
     "workers_ai_file": "workers_ai.txt",
     "workers_ai_format": "{name}|{apiKey}|{accountId}",
     "csv_enabled": true,

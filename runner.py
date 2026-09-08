@@ -36,7 +36,7 @@ def _import_module(name):
     spec.loader.exec_module(mod)
     return mod
 
-from config.py import load_config, append_account, generate_username
+from cf_config import load_config, append_account, generate_username
 
 _h = _import_module("cf_helpers")
 log = _h.log
@@ -254,7 +254,7 @@ def create_one(cfg: dict, args, idx: int):
     # Path file output
     stor = cfg.get("storage", {})
     json_file = stor.get("accounts_file", "accounts.json")
-    csv_file = stor.get("csv_file", "accounts.tsv")
+    csv_file = stor.get("csv_file", "accounts.csv")
     wai_file = stor.get("workers_ai_file", "workers_ai.txt")
 
     log.info("═══ Akun #%d SELESAI ═══", idx + 1)

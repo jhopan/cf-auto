@@ -20,7 +20,7 @@
   },
   "storage": {
     "accounts_file": "accounts.json",
-    "csv_file": "accounts.tsv",
+    "csv_file": "accounts.csv",
     "workers_ai_file": "workers_ai.txt",
     "workers_ai_format": "{name}|{apiKey}|{accountId}",
     "csv_enabled": true,

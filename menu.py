@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from config.py import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
+from cf_config import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
 
 CLEAR = "cls" if os.name == "nt" else "clear"
 
@@ -100,7 +100,7 @@ def show_config(cfg):
     print(f"  Proxy      : {cfg['browser']['proxy'] or '(tidak ada)'}")
     print(f"Storage")
     print(f"  File JSON    : {cfg['storage']['accounts_file']}")
-    print(f"  File CSV     : {cfg['storage'].get('csv_file', 'accounts.tsv')}")
+    print(f"  File CSV     : {cfg['storage'].get('csv_file', 'accounts.csv')}")
     print(f"  File WAI     : {cfg['storage'].get('workers_ai_file', 'workers_ai.txt')}")
     print(f"  WAI Format   : {cfg['storage'].get('workers_ai_format', '{name}|{apiKey}|{accountId}')}")
     print(f"  CSV Aktif    : {cfg['storage'].get('csv_enabled', True)}")
@@ -281,11 +281,11 @@ def menu_storage(cfg):
     st = cfg["storage"]
     print("  Format yang tersedia:")
     print("    1. JSON  (accounts.json)  — semua field lengkap")
-    print("    2. CSV   (accounts.tsv)   — spreadsheet, semua kolom")
+    print("    2. CSV   (accounts.csv)   — spreadsheet, semua kolom")
     print("    3. WAI   (workers_ai.txt) — name|apiKey|accountId per baris")
     print()
     st["accounts_file"] = ask("File JSON penyimpanan akun", st["accounts_file"])
-    st["csv_file"] = ask("File CSV penyimpanan akun", st.get("csv_file", "accounts.tsv"))
+    st["csv_file"] = ask("File CSV penyimpanan akun", st.get("csv_file", "accounts.csv"))
     st["workers_ai_file"] = ask("File Workers AI (.txt)", st.get("workers_ai_file", "workers_ai.txt"))
     print("  Format Workers AI (placeholder: {name} {apiKey} {accountId})")
     st["workers_ai_format"] = ask("Format WAI", st.get("workers_ai_format", "{name}|{apiKey}|{accountId}"))

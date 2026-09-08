@@ -42,4 +42,3 @@ debug_*.py
 cf_automation.py
 temp_mail.py
 runner_result.json
-accounts.tsv
