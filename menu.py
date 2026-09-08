@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from config.py import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
+from config import load_config, save_config, load_accounts, wordlist_stats, wordlist_reset
 
 CLEAR = "cls" if os.name == "nt" else "clear"
 
