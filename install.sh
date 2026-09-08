@@ -63,6 +63,30 @@ log "Python: $PYTHON ($("$PYTHON" --version 2>&1))"
 # ------------------------------------------------------------
 # 3. Install Python dependencies
 # ------------------------------------------------------------
+# Deteksi PEP 668 (Debian 12+/Ubuntu 23+) — pip system diblokir
+PEP668=0
+if [ "$OS_NAME" = "linux" ] || [ "$OS_NAME" = "macos" ]; then
+    if [ -f "/usr/lib/python3.13/EXTERNALLY-MANAGED" ] || \
+       ls /usr/lib/python3*/EXTERNALLY-MANAGED >/dev/null 2>&1 || \
+       "$PYTHON" -c "import sysconfig, os; sys.exit(0 if os.path.exists(os.path.join(sysconfig.get_path('stdlib'), 'EXTERNALLY-MANAGED')) else 1)" 2>/dev/null; then
+        PEP668=1
+    fi
+fi
+
+if [ "$PEP668" = "1" ] && [ -z "$VIRTUAL_ENV" ]; then
+    log "PEP 668 terdeteksi (externally-managed) — pakai venv."
+    VENV_DIR="$PROJECT_DIR/venv"
+    if [ ! -d "$VENV_DIR" ]; then
+        log "Buat venv di $VENV_DIR..."
+        "$PYTHON" -m venv "$VENV_DIR" 2>/dev/null || "$PYTHON" -m venv --without-pip "$VENV_DIR" && "$VENV_DIR/bin/python" -m ensurepip >/dev/null 2>&1 || true
+        [ -d "$VENV_DIR" ] || die "Gagal buat venv. Install: sudo apt install python3-venv"
+    fi
+    # Aktifkan venv untuk sisa script
+    . "$VENV_DIR/bin/activate"
+    PYTHON="$VENV_DIR/bin/python"
+    log "Python (venv): $PYTHON"
+fi
+
 log "Install dependencies Python..."
 "$PYTHON" -m pip install --upgrade pip >/dev/null 2>&1 || warn "pip upgrade gagal (lanjut)."
 "$PYTHON" -m pip install -r requirements.txt || die "Gagal install pip requirements."
