@@ -147,17 +147,16 @@ def create_one(cfg: dict, args, idx: int):
     log.info("  Password : %s", cf_password)
 
     # 2. Launch Camoufox
-    # headless: false (headed) | true (headless) | "virtual" (Xvfb otomatis, Linux)
+    # headless: false (headed) | true (headless) | "virtual" (Xvfb, Linux)
     headless_val = cfg["browser"]["headless"]
     if headless_val == "virtual":
-        headless_val = "virtual"  # Camoufox: headless='virtual' → Xvfb
+        headless_val = "virtual"
     elif headless_val in (True, "true", 1):
         headless_val = True
     else:
         headless_val = False
 
     launch_kwargs = {
-        "headless": headless_val,
         "humanize": True,
         "disable_coop": True,
         "geoip": True,
@@ -168,8 +167,29 @@ def create_one(cfg: dict, args, idx: int):
     if proxy:
         launch_kwargs["proxy"] = {"server": proxy}
 
+    xvfb_proc = None
     if headless_val == "virtual":
-        log.info("→ Mode: virtual display (Xvfb otomatis — Linux only)")
+        # CAMOUFOSS virtual display bawaan = 1x1 pixel — elemen tertumpuk,
+        # klik koordinat meleset. Start Xvfb sendiri dengan resolusi layar normal.
+        if os.name == "nt":
+            log.error("✗ Mode virtual hanya jalan di Linux. Ubah ke visible via menu 4.")
+            return
+        import shutil
+        import subprocess as _sp
+        if not shutil.which("Xvfb"):
+            log.error("✗ Xvfb tidak ada. Install: sudo apt install xvfb")
+            return
+        log.info("→ Mode: virtual display (Xvfb 1920x1080)")
+        xvfb_proc = _sp.Popen(
+            ["Xvfb", ":99", "-screen", "0", "1920x1080x24", "-ac", "-nolisten", "tcp"],
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            start_new_session=True,
+        )
+        time.sleep(2)
+        launch_kwargs["headless"] = False
+        launch_kwargs["virtual_display"] = ":99"
+    else:
+        launch_kwargs["headless"] = headless_val
 
     with Camoufox(**launch_kwargs) as browser:
         page = browser.new_page()
@@ -245,6 +265,18 @@ def create_one(cfg: dict, args, idx: int):
         log.info("  → %s (format: name|apiKey|accountId)", wai_file)
     else:
         log.info("  → Skip (sudah ada): %s", res["reason"])
+
+    # Kill Xvfb kalau kita yang start
+    if xvfb_proc:
+        try:
+            xvfb_proc.terminate()
+            xvfb_proc.wait(timeout=5)
+            log.info("→ Xvfb :99 di-stop")
+        except Exception:
+            try:
+                xvfb_proc.kill()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
