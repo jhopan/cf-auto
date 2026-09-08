@@ -1,10 +1,10 @@
 """
-menucfauto.py — Menu interaktif untuk mengatur config cf-auto.
+menu.py — Menu interaktif untuk mengatur config cf-auto.
 
 Meniru pola menutempmail: menu pilihan, prompt input, simpan ke config.json.
 Digunakan untuk atur endpoint temp mail, domain, password, browser, storage.
 
-Jalankan: python menucfauto.py
+Jalankan: python menu.py
 """
 import json
 import os

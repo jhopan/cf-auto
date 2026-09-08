@@ -9,7 +9,7 @@ Mendukung 3 format output:
 Dedup: cek field dedupe_field (default email) di SEMUA 3 file.
 Kalau sudah ada di salah satu → skip di semua.
 
-Config diatur via menucfauto.py. Runner membaca config ini saat start.
+Config diatur via menu.py. Runner membaca config ini saat start.
 """
 import csv
 import json

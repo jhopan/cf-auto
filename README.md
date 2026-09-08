@@ -62,7 +62,7 @@ emily|cfut_YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY|aff95feb33528e6f04cdee
 git clone https://github.com/jhopan/cf-auto.git
 cd cf-auto
 bash install.sh
-python menucfauto.py    # isi API key temp mail + pilih mode browser
+python menu.py    # isi API key temp mail + pilih mode browser
 ```
 
 Buat akun:
@@ -89,7 +89,7 @@ Contoh output:
 ## 🖥️ Super Menu
 
 ```bash
-python menucfauto.py
+python menu.py
 ```
 
 ```text
@@ -214,7 +214,7 @@ Header: `X-Email-API-Key: <api_key>`
 ssh server-anda
 git clone https://github.com/jhopan/cf-auto.git && cd cf-auto
 bash install.sh            # venv + camoufox + Xvfb + playwright deps
-python menucfauto.py       # menu 2: api key → menu 4: pilih 3 (virtual)
+python menu.py       # menu 2: api key → menu 4: pilih 3 (virtual)
 ./venv/bin/python runner.py --count 10
 ```
 
@@ -237,7 +237,7 @@ Bonus: IP residential rumah = trust Cloudflare tinggi = Turnstile lebih ramah da
 ```
 cf-auto/
 ├── runner.py              # Flow lengkap 5 modul
-├── menucfauto.py          # Super menu interaktif
+├── menu.py          # Super menu interaktif
 ├── cf_config.py           # Config + storage + wordlist engine
 ├── install.sh             # Installer cross-platform
 ├── config.example.json    # Template config

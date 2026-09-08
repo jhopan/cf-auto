@@ -132,7 +132,7 @@ fi
 # ------------------------------------------------------------
 echo ""
 log "═══ INSTALL SELESAI ═══"
-log "  Cara atur config : python menucfauto.py"
+log "  Cara atur config : python menu.py"
 log "  Jalankan akun    : python runner.py"
 log "  (atau) --count N : python runner.py --count 3"
 echo ""

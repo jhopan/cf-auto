@@ -1,7 +1,7 @@
 """
 runner.py — Jalankan alur pembuatan 1 akun Cloudflare lengkap.
 
-Membaca config.json (diatur via menucfauto.py) dan menyimpan hasil
+Membaca config.json (diatur via menu.py) dan menyimpan hasil
 ke accounts.json (append, tidak menimpa).
 
 Alur:
