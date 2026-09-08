@@ -35,3 +35,10 @@ accounts.csv
 workers_ai.txt
 accounts.json
 venv/
+
+# File tes & debug lama
+test_*.py
+debug_*.py
+cf_automation.py
+temp_mail.py
+runner_result.json
