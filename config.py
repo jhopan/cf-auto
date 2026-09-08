@@ -1,10 +1,10 @@
 """
-cf_config.py — Helper untuk load/save config.json dan accounts.json.
+config.py — Helper untuk load/save config.json dan accounts.json.
 
 Mendukung 3 format output:
   1. accounts.json  — semua field (JSON, dedup, append)
   2. workers_ai.txt — format name|apiKey|accountId (1 baris per akun, dedup, append)
-  3. accounts.csv   — semua field sebagai kolom (CSV, dedup, append)
+  3. accounts.tsv   — semua field sebagai kolom (CSV, dedup, append)
 
 Dedup: cek field dedupe_field (default email) di SEMUA 3 file.
 Kalau sudah ada di salah satu → skip di semua.
@@ -37,7 +37,7 @@ DEFAULTS = {
     "browser": {"headless": False, "proxy": ""},
     "storage": {
         "accounts_file": "accounts.json",
-        "csv_file": "accounts.csv",
+        "csv_file": "accounts.tsv",
         "workers_ai_file": "workers_ai.txt",
         "workers_ai_format": "{name}|{apiKey}|{accountId}",
         "csv_enabled": True,
@@ -91,7 +91,7 @@ def _accounts_path(cfg: dict) -> str:
 
 
 def _csv_path(cfg: dict) -> str:
-    return _path(cfg, "csv_file", "accounts.csv")
+    return _path(cfg, "csv_file", "accounts.tsv")
 
 
 def _wai_path(cfg: dict) -> str:
@@ -258,14 +258,14 @@ def _existing_values_json(cfg: dict, field: str) -> set:
 
 
 def _existing_values_csv(cfg: dict, field: str) -> set:
-    """Baca nilai field dari CSV."""
+    """Baca nilai field dari accounts.tsv (TAB-separated)."""
     path = _csv_path(cfg)
     vals = set()
     if not os.path.exists(path):
         return vals
     try:
         with open(path, "r", encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f)
+            reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
                 v = row.get(field)
                 if v:
@@ -366,24 +366,31 @@ def _append_json(cfg: dict, account: dict) -> None:
 
 
 def _append_csv(cfg: dict, account: dict) -> None:
-    """Append ke accounts.csv (dengan header, dedup, tidak hapus lama)."""
+    """Append ke accounts.tsv — TAB-separated (kolom terpisah di Excel).
+
+    Format: kolom A=email, B=password, C=account_id, dst.
+    Baris 1 = judul kolom, baris 2+ = data. Excel/Sheets otomatis
+    memisahkan ke kolom masing-masing karena delimiter TAB.
+    """
     path = _csv_path(cfg)
     row = {c: account.get(c, "") for c in CSV_COLUMNS}
 
     if os.path.exists(path):
-        # Baca yang ada, tambah baris baru
         with open(path, "r", encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f)
+            reader = csv.DictReader(f, delimiter="\t")
             rows = list(reader)
         rows.append(row)
         with open(path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+            writer = csv.DictWriter(
+                f, fieldnames=CSV_COLUMNS, extrasaction="ignore", delimiter="\t"
+            )
             writer.writeheader()
             writer.writerows(rows)
     else:
-        # File baru: tulis header + 1 baris
         with open(path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+            writer = csv.DictWriter(
+                f, fieldnames=CSV_COLUMNS, extrasaction="ignore", delimiter="\t"
+            )
             writer.writeheader()
             writer.writerow(row)
 
