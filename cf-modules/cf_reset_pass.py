@@ -111,54 +111,80 @@ class CloudflareResetPassword:
 
         log.info("✓ Subject: %s", msg.get("subject", ""))
 
-        # Reset code: dari URL dalam email (?code=...) ATAU dari body text
+        # Reset code: URL email berisi full code di query string.
+        # PENTING: code valid = FULL value param 'code' (bisa 100+ char hex-dash)
         import re as _re
+        from urllib.parse import urlparse, parse_qs
+
         reset_code = None
+        reset_url = None
 
-        # Cari di URL link dulu (password-reset?code=...)
         for l in msg.get("links", []):
-            m = _re.search(r"password-reset\?.*?code[=%]*([A-Za-z0-9\-]+)", l)
-            if m:
-                reset_code = m.group(1)
-                break
+            if "password-reset" not in l:
+                continue
+            try:
+                qs = parse_qs(urlparse(l).query)
+                if "code" in qs and qs["code"]:
+                    reset_code = qs["code"][0]
+                    reset_url = l
+                    break
+            except Exception:
+                continue
 
-        # Fallback: cari angka/kode di body text email
+        # Fallback: regex longgar ambil SEMUA char setelah code= sampai
+        # karakter non-url (spasi, ", <, >)
         if not reset_code:
-            body_txt = msg.get("body", "") or msg.get("text", "")
-            m = _re.search(r"\b(\d{6,8})\b", body_txt)
-            if m:
-                reset_code = m.group(1)
+            for l in msg.get("links", []):
+                if "password-reset" in l:
+                    m = _re.search(r"password-reset\?code=([A-Za-z0-9\-_%]+)", l)
+                    if m:
+                        reset_code = m.group(1)
+                        reset_url = l
+                        break
 
         if not reset_code:
             log.error("✗ Reset code tidak ditemukan di email")
             log.info("  Links: %s", msg.get("links", [])[:2])
             return False
 
-        log.info("✓ Reset code: %s", reset_code)
+        log.info("✓ Reset code ditemukan (%d char): %s...", len(reset_code),
+                 reset_code[:20])
+        if reset_url:
+            log.info("✓ URL reset dari email: %s", reset_url[:90])
 
-        # ── Step D: Buka halaman password-reset ──
-        page.goto("https://dash.cloudflare.com/password-reset",
+        # ── Step D: Buka URL DARI EMAIL (code biasanya auto-terisi) ──
+        page.goto(reset_url or "https://dash.cloudflare.com/password-reset",
                   wait_until="domcontentloaded", timeout=60000)
         time.sleep(5)
-        log.info("  URL: %s", page.url[:80])
+        log.info("  URL: %s", page.url[:90])
 
-        # ── Step E: Isi RESET CODE dulu ──
-        code_ok = False
-        for sel in ['input[name="code"]', 'input[placeholder*="code"]',
+        # ── Step E: Cek apakah reset code auto-terisi ──
+        # Kalau field kosong → isi manual dengan code dari URL email
+        # (code = SEMUA char setelah 'code=' sampai habis)
+        code_el = None
+        for sel in ['input[name="code"]', 'input[placeholder*="code" i]',
                     '#reset-code', 'input[type="text"]']:
             try:
                 el = page.wait_for_selector(sel, timeout=8000, state="visible")
                 if el:
-                    el.click(timeout=3000)
-                    el.fill(reset_code, timeout=5000)
-                    code_ok = True
-                    log.info("✓ Reset code terisi (%s)", sel)
+                    code_el = el
                     break
             except Exception:
                 continue
-        if not code_ok:
+        if not code_el:
             log.error("✗ Field reset code tidak ditemukan")
             return False
+
+        current = (code_el.input_value() or "").strip()
+        if current:
+            log.info("✓ Reset code AUTO-terisi (%d char)", len(current))
+        else:
+            log.info("→ Code tidak auto-isi, isi manual dari URL email...")
+            code_el.click(timeout=3000)
+            code_el.fill(reset_code, timeout=5000)
+            log.info("✓ Reset code diisi manual (%d char): %s...",
+                     len(reset_code), reset_code[:20])
+        code_ok = True
 
         time.sleep(1)
 
