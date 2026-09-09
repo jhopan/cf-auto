@@ -204,13 +204,13 @@ def menu_browser(cfg):
             print(f"  VNC       : {'AKTIF' if vnc_on else 'nonaktif'}")
             print(f"  Mode      : {mode} (on_demand/permanent)")
             print(f"  Domain    : {br.get('vnc_domain', '(belum diatur)')}")
-            print(f"  Port web  : {br.get('vnc_port', 6080)}")
+            print(f"  Port web  : {br.get('vnc_port', 6081)}")
             print()
             print("  1. ON/OFF VNC")
             print("  2. Mode VNC (on_demand = jalan saat runner / permanent = systemd 24/7)")
             print("  3. Atur password VNC")
             print("  4. Atur domain tunnel (mis. vnc.renunganbot.qzz.io)")
-            print("  5. Atur port web noVNC (default 6080)")
+            print("  5. Atur port web noVNC (default 6081)")
             print("  6. Generate systemd services (untuk mode permanent)")
             print("  7. Kembali")
             sub = input("  Pilih [1-7]: ").strip()
@@ -225,7 +225,7 @@ def menu_browser(cfg):
             elif sub == "4":
                 br["vnc_domain"] = ask("Domain (kosongkan = localhost saja)", br.get("vnc_domain", ""))
             elif sub == "5":
-                br["vnc_port"] = ask_int("Port web noVNC", br.get("vnc_port", 6080), 1024, 65535)
+                br["vnc_port"] = ask_int("Port web noVNC", br.get("vnc_port", 6081), 1024, 65535)
             elif sub == "6":
                 import vnc as _vnc
                 _vnc.systemd_print(cfg)

@@ -108,8 +108,8 @@ class TempMailAdapter:
 
 
 def br_vnc_display(cfg: dict) -> str:
-    """Ambil display dari config VNC (default :99)."""
-    return cfg.get("browser", {}).get("vnc_display", ":99")
+    """Ambil display dari config VNC (default :98)."""
+    return cfg.get("browser", {}).get("vnc_display", ":98")
 
 
 def make_password(cfg: dict) -> str:

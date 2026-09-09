@@ -42,7 +42,7 @@ def _popen(cmd):
 # ---------------------------------------------------------------------------
 # Xvfb
 # ---------------------------------------------------------------------------
-def start_xvfb(display=":99", w=1920, h=1080):
+def start_xvfb(display=":98", w=1920, h=1080):
     """Start Xvfb kalau belum jalan. Return Popen atau None kalau sudah jalan."""
     if not _which("Xvfb"):
         raise RuntimeError("Xvfb tidak ada. Install: sudo apt install xvfb")
@@ -60,7 +60,7 @@ def start_xvfb(display=":99", w=1920, h=1080):
     return proc
 
 
-def stop_xvfb(display=":99"):
+def stop_xvfb(display=":98"):
     _run(["pkill", "-f", f"Xvfb {display}"])
     log(f"Xvfb {display} di-stop")
 
@@ -68,7 +68,7 @@ def stop_xvfb(display=":99"):
 # ---------------------------------------------------------------------------
 # x11vnc + websockify
 # ---------------------------------------------------------------------------
-def start_vnc(display=":99", password="", port=6080):
+def start_vnc(display=":98", password="", port=6081, vnc_port=5901):
     """Start x11vnc + websockify+noVNC. Return (x11vnc_proc, websockify_proc)."""
     procs = [None, None]
 
@@ -79,19 +79,23 @@ def start_vnc(display=":99", password="", port=6080):
             "websockify tidak ada. Install: sudo apt install novnc websockify"
         )
 
-    passfile = os.path.expanduser("~/.vnc/passfile")
+    passfile = os.path.expanduser("~/.vnc/cfauto.pass")
 
-    # x11vnc — VNC server di localhost:5900
+    # x11vnc — VNC server di localhost:vnc_port (5901, unik per project)
     r = _run(["pgrep", "-x", "x11vnc"])
     if r.returncode != 0:
-        cmd = ["x11vnc", "-display", display, "-localhost", "-forever", "-repeat"]
-        if password and passfile:
+        cmd = [
+            "x11vnc", "-display", display,
+            "-rfbport", str(vnc_port),
+            "-localhost", "-forever", "-repeat", "-shared",
+        ]
+        if password:
             os.makedirs(os.path.dirname(passfile), exist_ok=True)
             if not os.path.exists(passfile):
                 _run(["x11vnc", "-storepasswd", password, passfile])
             cmd += ["-rfbauth", passfile]
         procs[0] = _popen(cmd)
-        log("x11vnc di-start (localhost:5900)")
+        log(f"x11vnc di-start (localhost:{vnc_port})")
     else:
         log("x11vnc sudah jalan")
 
@@ -107,7 +111,7 @@ def start_vnc(display=":99", password="", port=6080):
         cmd = ["websockify"]
         if novnc_web:
             cmd += ["--web", novnc_web]
-        cmd += [str(port), "localhost:5900"]
+        cmd += [str(port), f"localhost:{vnc_port}"]
         procs[1] = _popen(cmd)
         log(f"websockify di-start (:{port})")
     else:
@@ -125,14 +129,14 @@ def stop_vnc():
 # ---------------------------------------------------------------------------
 # Cloudflare Tunnel
 # ---------------------------------------------------------------------------
-def tunnel_cmd(domain, tunnel_name="cfvnc", port=6080):
+def tunnel_cmd(domain, tunnel_name="cfvnc", port=6081):
     """Return command cloudflared untuk tunnel ke noVNC."""
     return [
         "cloudflared", "tunnel", "run", tunnel_name,
     ]
 
 
-def tunnel_config_text(domain, tunnel_name="cfvnc", port=6080):
+def tunnel_config_text(domain, tunnel_name="cfvnc", port=6081):
     """Config yml untuk cloudflared tunnel VNC."""
     return (
         f"tunnel: {tunnel_name}\n"
@@ -175,7 +179,7 @@ def start_stack(cfg):
                'tunnel': proc|None, 'vnc_enabled': bool}
     """
     br = cfg.get("browser", {})
-    display = br.get("vnc_display", ":99")
+    display = br.get("vnc_display", ":98")
     result = {"xvfb": None, "x11vnc": None, "websockify": None,
               "tunnel": None, "vnc_enabled": False}
 
@@ -186,14 +190,14 @@ def start_stack(cfg):
             result["x11vnc"], result["websockify"] = start_vnc(
                 display,
                 br.get("vnc_password", ""),
-                int(br.get("vnc_port", 6080)),
+                int(br.get("vnc_port", 6081)),
             )
             result["vnc_enabled"] = True
             domain = br.get("vnc_domain", "")
             if domain:
                 log(f"→ VNC web: https://{domain} (password Anda)")
             else:
-                log(f"→ VNC web: http://localhost:{br.get('vnc_port', 6080)}")
+                log(f"→ VNC web: http://localhost:{br.get('vnc_port', 6081)}")
         except RuntimeError as e:
             log(f"⚠ VNC dilewati: {e}")
 
@@ -223,11 +227,29 @@ def stop_stack(stack, force_vnc=False):
 # ---------------------------------------------------------------------------
 SYSTEMD_VNC = """[Unit]
 Description=cf-auto VNC stack (x11vnc + websockify/noVNC)
-After=network.target
+After=cfauto-display.service
+Requires=cfauto-display.service
 
 [Service]
 User={user}
-ExecStart=/bin/bash -c 'x11vnc -display {display} -rfbauth {home}/.vnc/passfile -localhost -forever -repeat & websockify --web /usr/share/novnc {port} localhost:5900'
+Type=simple
+ExecStart=/usr/bin/x11vnc -display {display} -rfbport {vnc_port} -rfbauth {home}/.vnc/cfauto.pass -localhost -forever -repeat -shared
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+SYSTEMD_NOVNC = """[Unit]
+Description=cf-auto noVNC web ({port})
+After=cfvnc.service
+Requires=cfvnc.service
+
+[Service]
+User={user}
+Type=simple
+ExecStart=/usr/bin/websockify --web /usr/share/novnc {port} localhost:{vnc_port}
 Restart=always
 RestartSec=5
 
@@ -237,10 +259,9 @@ WantedBy=multi-user.target
 
 SYSTEMD_XVFB = """[Unit]
 Description=cf-auto Xvfb virtual display
-After=network.target
 
 [Service]
-User={user}
+Type=simple
 ExecStart=/usr/bin/Xvfb {display} -screen 0 1920x1080x24 -ac -nolisten tcp
 Restart=always
 RestartSec=5
@@ -255,7 +276,8 @@ After=network.target
 
 [Service]
 User={user}
-ExecStart=/usr/local/bin/cloudflared tunnel run {tunnel}
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --config /etc/cloudflared/cfauto.yml run {tunnel}
 Restart=always
 RestartSec=5
 
@@ -265,28 +287,32 @@ WantedBy=multi-user.target
 
 
 def systemd_write(cfg):
-    """Tulis 3 service file (butuh sudo saat penerapan). Return dict nama→isi."""
+    """Tulis 4 service file (butuh sudo saat penerapan). Return dict nama→isi."""
     import getpass
     user = getpass.getuser()
     home = os.path.expanduser("~")
     br = cfg.get("browser", {})
-    display = br.get("vnc_display", ":99")
-    port = int(br.get("vnc_port", 6080))
+    display = br.get("vnc_display", ":98")
+    port = int(br.get("vnc_port", 6081))
+    vnc_port = 5901
     tunnel = "cfvnc"
 
     return {
-        "cf-xvfb.service": SYSTEMD_XVFB.format(display=display, user=user),
-        "cfvnc.service": SYSTEMD_VNC.format(
-            user=user, home=home, display=display, port=port
+        "cfauto-display.service": SYSTEMD_XVFB.format(display=display, user=user),
+        "cfauto-vnc.service": SYSTEMD_VNC.format(
+            user=user, home=home, display=display, vnc_port=vnc_port
         ),
-        "cf-tunnel.service": SYSTEMD_TUNNEL.format(user=user, tunnel=tunnel),
+        "cfauto-novnc.service": SYSTEMD_NOVNC.format(
+            user=user, port=port, vnc_port=vnc_port
+        ),
+        "cloudflare-cfauto.service": SYSTEMD_TUNNEL.format(user=user, tunnel=tunnel),
     }
 
 
 def systemd_print(cfg):
     """Print semua service file + perintah penerapan (untuk di-copy user)."""
     files = systemd_write(cfg)
-    print("Salin 3 file berikut ke /etc/systemd/system/, lalu jalankan")
+    print("Salin 4 file berikut ke /etc/systemd/system/, lalu jalankan")
     print("perintah enable di bawah:\n")
     for name, content in files.items():
         print(f"───── /etc/systemd/system/{name} ─────")
@@ -294,6 +320,6 @@ def systemd_print(cfg):
     print("───── Perintah penerapan ─────")
     print("sudo cp *.service /etc/systemd/system/  # dari folder file ini")
     print("sudo systemctl daemon-reload")
-    print("sudo systemctl enable --now cf-xvfb cfvnc cf-tunnel")
+    print("sudo systemctl enable --now cfauto-display cfauto-vnc cfauto-novnc cloudflare-cfauto")
     print()
-    print("Status: systemctl status cf-xvfb cfvnc cf-tunnel")
+    print("Status: systemctl status cfauto-display cfauto-vnc cfauto-novnc cloudflare-cfauto")
