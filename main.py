@@ -187,7 +187,7 @@ def create_one(cfg: dict, args, idx: int):
         if permanent:
             # Xvfb & VNC dikelola systemd (cfauto-*) — jangan start/kill.
             # Pastikan display hidup; kalau tidak, runner gagal jelas.
-            r = subprocess.run(["pgrep", "-f", f"Xvfb {display}"],
+            r = _sp.run(["pgrep", "-f", f"Xvfb {display}"],
                                capture_output=True)
             if r.returncode != 0:
                 log.error(
@@ -198,7 +198,7 @@ def create_one(cfg: dict, args, idx: int):
             log.info(f"→ Mode: permanent (Xvfb {display} via systemd)")
             # Pastikan x11vnc ikut jalan kalau VNC aktif di config
             if cfg.get("browser", {}).get("vnc"):
-                r2 = subprocess.run(["pgrep", "-x", "x11vnc"], capture_output=True)
+                r2 = _sp.run(["pgrep", "-x", "x11vnc"], capture_output=True)
                 if r2.returncode != 0:
                     log.warning("⚠ x11vnc tidak jalan — start: sudo systemctl start cfauto-vnc")
         else:
