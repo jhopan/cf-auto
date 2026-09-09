@@ -135,15 +135,70 @@ def main():
 
     cfg = load_config()
 
-    for n in range(max(1, args.count)):
-        log.info("═══ Akun #%d ═══", n + 1)
+    # ── Guard anti-abuse dari config ──
+    limits = cfg.get("limits", {})
+    max_per_day = int(limits.get("max_per_day", 10))
+    delay_between = int(limits.get("delay_between_minutes", 5))
+    kill_browser = limits.get("kill_browser_between", True)
+
+    # Hitung akun yang dibuat hari ini (dari accounts.json)
+    today = time.strftime("%Y-%m-%d")
+    made_today = sum(
+        1 for a in load_accounts(cfg)
+        if a.get("created_at", "").startswith(today)
+    )
+    if made_today >= max_per_day:
+        log.error(
+            "✗ Kuota harian habis: %d/%d akun hari ini (%s). "
+            "Naikkan limits.max_per_day di config atau besok lagi.",
+            made_today, max_per_day, today,
+        )
+        return
+    remaining_today = max_per_day - made_today
+
+    # Batasi count dengan sisa kuota hari ini
+    want = max(1, args.count)
+    if want > remaining_today:
+        log.warning(
+            "⚠ Minta %d akun, tapi sisa kuota hari ini %d → jalan %d saja.",
+            want, remaining_today, remaining_today,
+        )
+        count = remaining_today
+    else:
+        count = want
+
+    log.info("Kuota hari ini: %d/%d terpakai. Jalan %d akun. Jeda antar akun: %d menit.",
+             made_today, max_per_day, count, delay_between)
+
+    for n in range(count):
+        log.info("═══ Akun #%d/%d ═══", n + 1, count)
+
+        # ── BUNUH browser lama sebelum buka dari awal (biar gak numpuk) ──
+        if kill_browser and n > 0:
+            log.info("→ Kill proses browser lama (camoufox)...")
+            for pname in ["camoufox", "firefox", "plugin-container"]:
+                try:
+                    _sp.run(["pkill", "-9", "-f", pname], capture_output=True)
+                except Exception:
+                    pass
+            time.sleep(3)
+            log.info("→ Browser bersih, buka dari awal.")
+
         try:
-            create_one(cfg, args, n)
+            create_one(cfg, args, n, kill_browser)
         except Exception as e:
             log.error("✗ Akun #%d gagal: %s", n + 1, str(e)[:120])
 
+        # Jeda antar akun (kecuali setelah akun terakhir)
+        if n < count - 1:
+            log.info("⏳ Jeda %d menit sebelum akun berikutnya (anti-abuse)...",
+                     delay_between)
+            for s in range(delay_between * 60, 0, -30):
+                log.info("   sisa %d menit...", s // 60)
+                time.sleep(min(30, s))
 
-def create_one(cfg: dict, args, idx: int):
+
+def create_one(cfg: dict, args, idx: int, kill_browser: bool = True):
     # 1. Buat temp mail
     log.info("  Persiapan temp mail...")
     mail = TempMailAdapter(cfg)
@@ -293,11 +348,7 @@ def create_one(cfg: dict, args, idx: int):
     else:
         log.info("  → Skip (sudah ada): %s", res["reason"])
 
-    # Cleanup: stop Xvfb + VNC (on_demand) — permanent mode tidak disentuh
-    if vnc_stack:
-        import vnc as _vnc
-        _vnc.stop_stack(vnc_stack)
-        log.info("→ Virtual display + VNC di-stop (on_demand)")
+    # Cleanup on_demand Xvfb/VNC dipindah ke main() (dijalankan antar akun)
 
 
 if __name__ == "__main__":

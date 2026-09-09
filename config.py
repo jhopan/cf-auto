@@ -44,6 +44,11 @@ DEFAULTS = {
         "vnc_port": 6081,
         "vnc_domain": "vnc-cfauto.jhopan.my.id",
     },
+    "limits": {
+        "max_per_day": 10,
+        "delay_between_minutes": 5,
+        "kill_browser_between": True,
+    },
     "storage": {
         "accounts_file": "accounts.json",
         "csv_file": "accounts.csv",

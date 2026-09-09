@@ -5,7 +5,7 @@
     "domains": ["renunganbot.qzz.io"],
     "prefix": "cf",
     "email_format": "{prefix}{rand8}",
-    "naming_mode": "format",
+    "naming_mode": "wordlist",
     "wordlist_file": "wordlist.csv",
     "wordlist_index": 0
   },
@@ -16,7 +16,18 @@
   },
   "browser": {
     "headless": "virtual",
-    "proxy": ""
+    "proxy": "",
+    "vnc": true,
+    "vnc_mode": "permanent",
+    "vnc_password": "",
+    "vnc_display": ":98",
+    "vnc_port": 6081,
+    "vnc_domain": "vnc-cfauto.jhopan.my.id"
+  },
+  "limits": {
+    "max_per_day": 10,
+    "delay_between_minutes": 5,
+    "kill_browser_between": true
   },
   "storage": {
     "accounts_file": "accounts.json",
