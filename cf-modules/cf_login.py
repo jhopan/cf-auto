@@ -105,8 +105,8 @@ class CloudflareLogin:
         time.sleep(1)
         clicked = False
         for bsel in [
-            'button:has-text("Continue with password")',
             'button:has-text("Sign in")',
+            'button:has-text("Continue with password")',
             'button:has-text("Log in")',
             'button[type="submit"]',
         ]:

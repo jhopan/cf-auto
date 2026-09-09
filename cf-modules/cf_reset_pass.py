@@ -43,10 +43,11 @@ class CloudflareResetPassword:
         log.info("═══ Module 1c: Reset Password ═══")
         log.info("→ Email: %s", self.email)
 
-        # ── Step A: Buka login → Forgot password ──
+        # ── Step A: Langsung ke halaman forgot password ──
+        FORGOT_URL = "https://dash.cloudflare.com/forgot-password"
         for attempt in range(3):
             try:
-                page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
+                page.goto(FORGOT_URL, wait_until="domcontentloaded", timeout=60000)
                 break
             except Exception as e:
                 log.warning("⚠ Navigasi gagal (attempt %d): %s",
@@ -55,8 +56,9 @@ class CloudflareResetPassword:
 
         time.sleep(4)
         dismiss_cookie_banner(page)
+        log.info("  URL: %s", page.url[:70])
 
-        # Isi email dulu
+        # ── Step B: Isi email + klik Send ──
         email_ok = False
         for esel in SEL_EMAIL:
             try:
@@ -70,58 +72,18 @@ class CloudflareResetPassword:
             except Exception:
                 continue
         if not email_ok:
-            log.error("✗ Field email tidak ditemukan")
+            log.error("✗ Field email tidak ditemukan di halaman forgot")
             return False
-
-        # Klik "Forgot password?"
-        forgot_clicked = False
-        for sel in [
-            'a:has-text("Forgot password")',
-            'a:has-text("Forgot your password")',
-            'button:has-text("Forgot password")',
-            'a[href*="forgot"]',
-        ]:
-            try:
-                el = page.wait_for_selector(sel, timeout=5000, state="visible")
-                if el:
-                    el.click(force=True, timeout=5000)
-                    forgot_clicked = True
-                    log.info("✓ Forgot password diklik (%s)", sel)
-                    break
-            except Exception:
-                continue
-        if not forgot_clicked:
-            log.error("✗ Link Forgot password tidak ditemukan")
-            return False
-
-        time.sleep(4)
-
-        # ── Step B: Halaman forgot — isi email + kirim ──
-        # Email mungkin sudah terisi (dibawa dari halaman login)
-        try:
-            el = page.wait_for_selector(
-                'input[name="email"], input[type="email"]',
-                timeout=8000, state="visible",
-            )
-            if el:
-                current = el.input_value() or ""
-                if self.email.lower() not in current.lower():
-                    el.click(timeout=3000)
-                    el.fill(self.email, timeout=5000)
-                log.info("✓ Email di halaman forgot: %s", el.input_value())
-        except Exception:
-            log.info("→ Field email tidak ada di halaman forgot (mungkin auto)")
 
         time.sleep(1)
 
-        # Klik Email/Kirim/Continue
+        # Klik Send
         sent = False
         for sel in [
+            'button:has-text("Send")',
             'button:has-text("Email me a reset link")',
             'button:has-text("Send reset link")',
             'button:has-text("Email me")',
-            'button:has-text("Send")',
-            'button:has-text("Continue")',
             'button[type="submit"]',
         ]:
             try:
