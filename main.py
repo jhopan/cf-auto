@@ -14,6 +14,7 @@ Alur:
 from __future__ import annotations
 import json
 import os
+import subprocess as _sp
 import sys
 import time
 import random
@@ -175,20 +176,42 @@ def create_one(cfg: dict, args, idx: int):
     xvfb_proc = None
     vnc_stack = None
     if headless_val == "virtual":
-        # Virtual display: pakai vnc.py (start Xvfb + VNC opsional)
+        # Virtual display: pakai vnc.py
         if os.name == "nt":
             log.error("✗ Mode virtual hanya jalan di Linux. Ubah ke visible via menu 4.")
             return
         import vnc as _vnc
-        try:
-            vnc_stack = _vnc.start_stack(cfg)
-            xvfb_proc = vnc_stack.get("xvfb")
-        except RuntimeError as e:
-            log.error(f"✗ {e}")
-            return
+        display = br_vnc_display(cfg)
+        permanent = cfg.get("browser", {}).get("vnc_mode") == "permanent"
+
+        if permanent:
+            # Xvfb & VNC dikelola systemd (cfauto-*) — jangan start/kill.
+            # Pastikan display hidup; kalau tidak, runner gagal jelas.
+            r = subprocess.run(["pgrep", "-f", f"Xvfb {display}"],
+                               capture_output=True)
+            if r.returncode != 0:
+                log.error(
+                    f"✗ Xvfb {display} tidak jalan. "
+                    f"Start: sudo systemctl start cfauto-display"
+                )
+                return
+            log.info(f"→ Mode: permanent (Xvfb {display} via systemd)")
+            # Pastikan x11vnc ikut jalan kalau VNC aktif di config
+            if cfg.get("browser", {}).get("vnc"):
+                r2 = subprocess.run(["pgrep", "-x", "x11vnc"], capture_output=True)
+                if r2.returncode != 0:
+                    log.warning("⚠ x11vnc tidak jalan — start: sudo systemctl start cfauto-vnc")
+        else:
+            # on_demand: start Xvfb (+VNC) sendiri, kill saat selesai
+            try:
+                vnc_stack = _vnc.start_stack(cfg)
+                xvfb_proc = vnc_stack.get("xvfb")
+            except RuntimeError as e:
+                log.error(f"✗ {e}")
+                return
+
         launch_kwargs["headless"] = False
-        launch_kwargs["virtual_display"] = br_vnc_display(cfg)
-        # Window size via Firefox prefs — viewport set nanti di page
+        launch_kwargs["virtual_display"] = display
         launch_kwargs["firefox_user_prefs"] = {
             "privacy.resistFingerprinting.windowSize": "1920x1080",
         }
