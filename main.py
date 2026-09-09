@@ -106,6 +106,11 @@ class TempMailAdapter:
         self.s.delete(f"{self.base}/api/inbox/{encoded}", headers=self.headers, timeout=10)
 
 
+def br_vnc_display(cfg: dict) -> str:
+    """Ambil display dari config VNC (default :99)."""
+    return cfg.get("browser", {}).get("vnc_display", ":99")
+
+
 def make_password(cfg: dict) -> str:
     """Buat password sesuai config."""
     pw = cfg["password"]
@@ -168,28 +173,22 @@ def create_one(cfg: dict, args, idx: int):
         launch_kwargs["proxy"] = {"server": proxy}
 
     xvfb_proc = None
+    vnc_stack = None
     if headless_val == "virtual":
-        # CAMOUFOSS virtual display bawaan = 1x1 pixel — elemen tertumpuk,
-        # klik koordinat meleset. Start Xvfb sendiri dengan resolusi layar normal.
+        # Virtual display: pakai vnc.py (start Xvfb + VNC opsional)
         if os.name == "nt":
             log.error("✗ Mode virtual hanya jalan di Linux. Ubah ke visible via menu 4.")
             return
-        import shutil
-        import subprocess as _sp
-        if not shutil.which("Xvfb"):
-            log.error("✗ Xvfb tidak ada. Install: sudo apt install xvfb")
+        import vnc as _vnc
+        try:
+            vnc_stack = _vnc.start_stack(cfg)
+            xvfb_proc = vnc_stack.get("xvfb")
+        except RuntimeError as e:
+            log.error(f"✗ {e}")
             return
-        log.info("→ Mode: virtual display (Xvfb 1920x1080)")
-        xvfb_proc = _sp.Popen(
-            ["Xvfb", ":99", "-screen", "0", "1920x1080x24", "-ac", "-nolisten", "tcp"],
-            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-            start_new_session=True,
-        )
-        time.sleep(2)
         launch_kwargs["headless"] = False
-        launch_kwargs["virtual_display"] = ":99"
+        launch_kwargs["virtual_display"] = br_vnc_display(cfg)
         # Window size via Firefox prefs — viewport set nanti di page
-        # (Camoufox tidak terima param 'screen' seperti Playwright context)
         launch_kwargs["firefox_user_prefs"] = {
             "privacy.resistFingerprinting.windowSize": "1920x1080",
         }
@@ -271,17 +270,11 @@ def create_one(cfg: dict, args, idx: int):
     else:
         log.info("  → Skip (sudah ada): %s", res["reason"])
 
-    # Kill Xvfb kalau kita yang start
-    if xvfb_proc:
-        try:
-            xvfb_proc.terminate()
-            xvfb_proc.wait(timeout=5)
-            log.info("→ Xvfb :99 di-stop")
-        except Exception:
-            try:
-                xvfb_proc.kill()
-            except Exception:
-                pass
+    # Cleanup: stop Xvfb + VNC (on_demand) — permanent mode tidak disentuh
+    if vnc_stack:
+        import vnc as _vnc
+        _vnc.stop_stack(vnc_stack)
+        log.info("→ Virtual display + VNC di-stop (on_demand)")
 
 
 if __name__ == "__main__":

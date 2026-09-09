@@ -34,7 +34,16 @@ DEFAULTS = {
         "wordlist_index": 0,
     },
     "password": {"mode": "random", "fixed": "", "length": 16},
-    "browser": {"headless": False, "proxy": ""},
+    "browser": {
+        "headless": False,
+        "proxy": "",
+        "vnc": False,
+        "vnc_mode": "on_demand",
+        "vnc_password": "",
+        "vnc_display": ":99",
+        "vnc_port": 6080,
+        "vnc_domain": "",
+    },
     "storage": {
         "accounts_file": "accounts.json",
         "csv_file": "accounts.csv",
