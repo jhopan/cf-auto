@@ -101,7 +101,7 @@ class CloudflareResetPassword:
 
         time.sleep(6)
 
-        # ── Step C: Tunggu email reset ──
+        # ── Step C: Tunggu email reset → ambil RESET CODE ──
         log.info("→ Menunggu email reset password...")
         try:
             msg = self.mail.wait_for_email(self.email, timeout=120)
@@ -111,33 +111,58 @@ class CloudflareResetPassword:
 
         log.info("✓ Subject: %s", msg.get("subject", ""))
 
-        # Cari link reset
-        reset_link = None
-        links = msg.get("links", [])
-        for l in links:
-            low = l.lower()
-            if ("password" in low or "reset" in low) and "cloudflare.com" in low:
-                reset_link = l
+        # Reset code: dari URL dalam email (?code=...) ATAU dari body text
+        import re as _re
+        reset_code = None
+
+        # Cari di URL link dulu (password-reset?code=...)
+        for l in msg.get("links", []):
+            m = _re.search(r"password-reset\?.*?code[=%]*([A-Za-z0-9\-]+)", l)
+            if m:
+                reset_code = m.group(1)
                 break
-        if not reset_link and links:
-            # fallback: link cloudflare pertama yang bukan dokumentasi
-            for l in links:
-                if "developers.cloudflare.com" not in l.lower():
-                    reset_link = l
-                    break
-        if not reset_link:
-            log.error("✗ Link reset tidak ditemukan di email")
-            log.info("  Links: %s", links[:3])
+
+        # Fallback: cari angka/kode di body text email
+        if not reset_code:
+            body_txt = msg.get("body", "") or msg.get("text", "")
+            m = _re.search(r"\b(\d{6,8})\b", body_txt)
+            if m:
+                reset_code = m.group(1)
+
+        if not reset_code:
+            log.error("✗ Reset code tidak ditemukan di email")
+            log.info("  Links: %s", msg.get("links", [])[:2])
             return False
 
-        log.info("✓ Link reset: %s", reset_link[:80])
+        log.info("✓ Reset code: %s", reset_code)
 
-        # ── Step D: Buka link di TAB SAMA ──
-        page.goto(reset_link, wait_until="domcontentloaded", timeout=60000)
+        # ── Step D: Buka halaman password-reset ──
+        page.goto("https://dash.cloudflare.com/password-reset",
+                  wait_until="domcontentloaded", timeout=60000)
         time.sleep(5)
         log.info("  URL: %s", page.url[:80])
 
-        # ── Step E: Set password baru ──
+        # ── Step E: Isi RESET CODE dulu ──
+        code_ok = False
+        for sel in ['input[name="code"]', 'input[placeholder*="code"]',
+                    '#reset-code', 'input[type="text"]']:
+            try:
+                el = page.wait_for_selector(sel, timeout=8000, state="visible")
+                if el:
+                    el.click(timeout=3000)
+                    el.fill(reset_code, timeout=5000)
+                    code_ok = True
+                    log.info("✓ Reset code terisi (%s)", sel)
+                    break
+            except Exception:
+                continue
+        if not code_ok:
+            log.error("✗ Field reset code tidak ditemukan")
+            return False
+
+        time.sleep(1)
+
+        # ── Step F: Isi password baru ──
         pwd_ok = False
         for psel in SEL_PASSWORD:
             try:
@@ -151,16 +176,13 @@ class CloudflareResetPassword:
             except Exception:
                 continue
         if not pwd_ok:
-            # Mungkin dua field (password + confirm)
             try:
                 pwds = page.query_selector_all('input[type="password"]')
-                if len(pwds) >= 2:
+                if pwds:
                     pwds[0].click()
                     pwds[0].fill(self.new_password)
-                    pwds[1].click()
-                    pwds[1].fill(self.new_password)
                     pwd_ok = True
-                    log.info("✓ Password baru + confirm terisi")
+                    log.info("✓ Password baru terisi (query_selector)")
             except Exception:
                 pass
         if not pwd_ok:
@@ -169,13 +191,10 @@ class CloudflareResetPassword:
 
         time.sleep(1)
 
-        # ── Step F: Submit ──
+        # ── Step G: Klik Reset ──
         submitted = False
         for sel in [
-            'button:has-text("Save")',
-            'button:has-text("Reset password")',
-            'button:has-text("Set password")',
-            'button:has-text("Change password")',
+            'button:has-text("Reset")',
             'button[type="submit"]',
         ]:
             try:
@@ -183,7 +202,7 @@ class CloudflareResetPassword:
                 if el:
                     el.click(force=True, timeout=5000)
                     submitted = True
-                    log.info("✓ Submit password baru (%s)", sel)
+                    log.info("✓ Reset diklik (%s)", sel)
                     break
             except Exception:
                 continue
@@ -191,22 +210,22 @@ class CloudflareResetPassword:
             page.keyboard.press("Enter")
             log.info("→ Enter ditekan")
 
-        time.sleep(6)
+        time.sleep(8)
 
-        # Cek sukses
+        # ── Step H: Cek sukses ──
         try:
             body = page.inner_text("body").lower()
-            if "success" in body or "password has been" in body or "updated" in body:
+            if ("success" in body or "password has been" in body
+                    or "your password" in body and "reset" in body):
                 log.info("✓✓✓ PASSWORD DIRESET ═══")
                 return True
         except Exception:
             pass
 
-        # Kalau redirect ke login/dashboard, anggap sukses
         url = page.url
-        if "login" not in url or "password" not in body:
-            log.info("✓ Password kemungkinan berhasil (URL: %s)", url[:60])
+        if "password-reset" not in url:
+            log.info("✓ Password berhasil (redirect ke: %s)", url[:60])
             return True
 
-        log.warning("⚠ Status reset tidak jelas")
-        return True  # optimis — coba login nanti akan buktikan
+        log.warning("⚠ Status reset tidak jelas — anggap sukses, login akan buktikan")
+        return True
