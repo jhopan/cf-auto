@@ -334,13 +334,33 @@ def menu_run(cfg):
         return
 
     # Panggil runner dengan --count
+    # PENTING: pakai python dari venv (yang ada camoufox-nya), bukan sys.executable
+    # Kalau menu dijalankan dengan system python, subprocess tetap harus ke venv
     import subprocess
-    python = sys.executable
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(base_dir, "main.py")
+
+    python = None
+    # 1. Kalau sekarang sudah jalan di dalam venv, pakai itu
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        python = sys.executable
+    # 2. Cari venv di folder project (Linux & Windows layout)
+    else:
+        for venv_py in [
+            os.path.join(base_dir, "venv", "bin", "python"),      # Linux
+            os.path.join(base_dir, "venv", "Scripts", "python.exe"),  # Windows
+        ]:
+            if os.path.exists(venv_py):
+                python = venv_py
+                break
+    # 3. Fallback: sys.executable (misal Windows tanpa venv)
+    if not python:
+        python = sys.executable
+
     cmd = [python, "-B", script, "--count", str(count)]
     print(f"  Menjalankan: {' '.join(cmd)}")
     print()
-    subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)))
+    subprocess.run(cmd, cwd=base_dir)
     print()
     input("  Tekan Enter untuk kembali...")
 
