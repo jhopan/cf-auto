@@ -37,7 +37,7 @@ def _import_module(name):
     spec.loader.exec_module(mod)
     return mod
 
-from config import load_config, append_account, generate_username
+from config import load_config, append_account, generate_username, load_accounts
 
 _h = _import_module("cf_helpers")
 log = _h.log
