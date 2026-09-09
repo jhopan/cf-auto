@@ -206,6 +206,7 @@ def create_one(cfg: dict, args, idx: int, kill_browser: bool = True):
     cf_password = make_password(cfg)
     log.info("  Email    : %s", cf_email)
     log.info("  Password : %s", cf_password)
+    # Catatan: cf_signup bisa fallback login+reset, password mungkin berubah di create_one
 
     # 2. Launch Camoufox
     # headless: false (headed) | true (headless) | "virtual" (Xvfb, Linux)
@@ -278,7 +279,7 @@ def create_one(cfg: dict, args, idx: int, kill_browser: bool = True):
         page.set_default_timeout(30000)
 
         # Module 1: Signup
-        signup = CloudflareSignup(cf_email, cf_password)
+        signup = CloudflareSignup(cf_email, cf_password, mail)
         account_id = signup.run(page)
         if not account_id:
             log.error("✗ Signup gagal, stop akun ini.")
@@ -318,9 +319,13 @@ def create_one(cfg: dict, args, idx: int, kill_browser: bool = True):
             return
 
     # Simpan hasil (append, dedup, JSON + CSV + workers_ai.txt)
+    # Password FINAL: kalau cf_signup fallback reset, self.password berubah
+    final_password = getattr(signup, "password", cf_password) or cf_password
+    if final_password != cf_password:
+        log.info("  (password berubah karena fallback reset — pakai yang baru)")
     account = {
         "email": cf_email,
-        "password": cf_password,
+        "password": final_password,
         "global_api_key": api_key,
         "workers_ai_token": workers_ai_token,
         "worker_api_token": worker_token,

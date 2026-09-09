@@ -1,5 +1,5 @@
 """
-cf_signup.py — Module 1: Signup Cloudflare + Solve Turnstile
+cf_signup.py — Module 1a: Signup Cloudflare + Solve Turnstile
 
 Tanggung jawab:
   - Buka dash.cloudflare.com/sign-up
@@ -7,10 +7,11 @@ Tanggung jawab:
   - Isi password
   - Selesaikan Turnstile sampai dapat token
   - Klik Sign up
+  - DETEKSI "email already exists" → fallback ke cf_login / cf_reset_pass
 
 TIDAK tanggung jawab:
-  - Verifikasi email
-  - Ambil API key
+  - Verifikasi email (module 2)
+  - Ambil API key (module 3+)
 """
 from __future__ import annotations
 import logging
@@ -38,9 +39,10 @@ __all__ = ["CloudflareSignup"]
 class CloudflareSignup:
     """Module 1: Signup Cloudflare + Turnstile."""
 
-    def __init__(self, email: str, password: str):
+    def __init__(self, email: str, password: str, mail=None):
         self.email = email
         self.password = password
+        self.mail = mail  # untuk reset password fallback (optional)
 
     def run(self, page: Page) -> str | None:
         """Jalankan signup flow.
@@ -99,7 +101,44 @@ class CloudflareSignup:
         log.info("✓ Tombol Sign up diklik")
 
         # Tunggu navigasi ke dashboard — Cloudflare butuh waktu redirect
-        time.sleep(15.0)
+        time.sleep(8.0)
+
+        # ── DETEKSI "email already exists" SEBELUM tunggu dashboard ──
+        try:
+            body_early = page.inner_text("body").lower()
+        except Exception:
+            body_early = ""
+        if "already exists" in body_early or "already have an account" in body_early:
+            log.warning("⚠ Email SUDAH TERDAFTAR di Cloudflare!")
+            log.info("→ Fallback: LOGIN dengan password yang diberikan...")
+
+            # Impor di sini agar tidak circular import saat load module
+            from cf_login import CloudflareLogin
+            login = CloudflareLogin(self.email, self.password)
+            aid = login.run(page)
+
+            if aid:
+                log.info("✓ Fallback login sukses — lanjut sebagai akun existing")
+                return aid
+
+            # Login gagal → password beda dari run sebelumnya → RESET
+            log.warning("⚠ Login gagal (password salah/lupa) → RESET password...")
+            from cf_reset_pass import CloudflareResetPassword
+            new_password = random_password(16)
+            resetter = CloudflareResetPassword(self.email, new_password, self.mail)
+            if resetter.run(page):
+                log.info("→ Password direset. Login dengan password baru...")
+                login2 = CloudflareLogin(self.email, new_password)
+                aid = login2.run(page)
+                if aid:
+                    # Update password di memory agar module lain pakai yang baru
+                    self.password = new_password
+                    log.info("✓ Password diperbarui untuk akun existing")
+                    return aid
+
+            log.error("✗ Semua fallback gagal (login + reset)")
+            return None
+
         url = page.url
         log.info("  URL setelah signup: %s", url)
 
@@ -120,9 +159,28 @@ class CloudflareSignup:
                 log.info("✓✓✓ SIGNUP BERHASIL ═══")
                 log.info("  Account ID: %s", aid)
                 return aid
-            # Cek apakah ada onboarding/welcome screen
+            # Deteksi error email taken juga di loop ini
             try:
-                body = page.inner_text("body")
+                body = page.inner_text("body").lower()
+                if "already exists" in body:
+                    log.warning("⚠ Email SUDAH TERDAFTAR (terlambat terdeteksi)")
+                    log.info("→ Fallback: LOGIN...")
+                    from cf_login import CloudflareLogin
+                    login = CloudflareLogin(self.email, self.password)
+                    aid = login.run(page)
+                    if aid:
+                        return aid
+                    # login gagal → reset
+                    from cf_reset_pass import CloudflareResetPassword
+                    new_password = random_password(16)
+                    if CloudflareResetPassword(self.email, new_password, self.mail).run(page):
+                        login2 = CloudflareLogin(self.email, new_password)
+                        aid = login2.run(page)
+                        if aid:
+                            self.password = new_password
+                            return aid
+                    log.error("✗ Semua fallback gagal")
+                    return None
                 if "workers-and-pages" in url or "onboard" in url:
                     log.info("→ Onboarding page terdeteksi, skip...")
                     break
