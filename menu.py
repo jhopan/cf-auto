@@ -212,8 +212,9 @@ def menu_browser(cfg):
             print("  4. Atur domain tunnel (mis. vnc.renunganbot.qzz.io)")
             print("  5. Atur port web noVNC (default 6081)")
             print("  6. Generate systemd services (untuk mode permanent)")
-            print("  7. Kembali")
-            sub = input("  Pilih [1-7]: ").strip()
+            print("  7. Notif Telegram (bantuan manual)")
+            print("  8. Kembali")
+            sub = input("  Pilih [1-8]: ").strip()
             if sub == "1":
                 br["vnc"] = not vnc_on
                 print(f"  → VNC {'AKTIF' if br['vnc'] else 'nonaktif'}")
@@ -232,6 +233,11 @@ def menu_browser(cfg):
                 input("  Tekan Enter untuk kembali...")
                 continue
             elif sub == "7":
+                _menu_telegram(cfg)
+                cfg = load_config()
+                br = cfg["browser"]
+                continue
+            elif sub == "8":
                 break
             else:
                 print("  ❌ Pilihan tidak valid.")
@@ -239,6 +245,74 @@ def menu_browser(cfg):
             save_config(cfg)
             cfg = load_config()
             br = cfg["browser"]
+
+
+def _menu_telegram(cfg):
+    """Sub-menu notifikasi Telegram (diakses dari menu Browser)."""
+    import cf_telegram as _tg
+    while True:
+        print()
+        print("  TELEGRAM NOTIF (bantuan manual + laporan)")
+        divider()
+        t = cfg.get("telegram", {})
+        status = "AKTIF" if (t.get("bot_token") and t.get("chat_id")) else "belum diatur"
+        print(f"  Status    : {status}")
+        print(f"  Bot token : {t.get('bot_token', '')[:12]}..." if t.get('bot_token') else "  Bot token : (kosong)")
+        print(f"  Chat ID   : {t.get('chat_id', '(kosong)')}")
+        print(f"  Notif manual : {'ON' if t.get('notify_manual', True) else 'OFF'}")
+        print(f"  Timeout manual : {t.get('manual_timeout_minutes', 10)} menit")
+        print(f"  Notif sukses : {'ON' if t.get('notify_success') else 'OFF'}")
+        print()
+        print("  1. Set bot token (dari @BotFather)")
+        print("  2. Deteksi chat ID otomatis (kirim 1 pesan ke bot dulu!)")
+        print("  3. ON/OFF notif bantuan manual")
+        print("  4. Atur timeout tunggu manual (menit)")
+        print("  5. ON/OFF notif sukses per akun")
+        print("  6. Test kirim pesan")
+        print("  7. Kembali")
+        sub = input("  Pilih [1-7]: ").strip()
+        if sub == "1":
+            t["bot_token"] = input("  Bot token: ").strip()
+        elif sub == "2":
+            if not t.get("bot_token"):
+                print("  ❌ Set bot token dulu (pilihan 1).")
+                continue
+            print("  → Kirim 1 pesan ke bot Anda di Telegram sekarang...")
+            input("     lalu tekan Enter di sini...")
+            try:
+                chats = _tg.detect_chat_id(t["bot_token"])
+                if not chats:
+                    print("  ❌ Tidak ada chat ditemukan — kirim pesan ke bot dulu, ulangi.")
+                    continue
+                for i, (cid, title) in enumerate(chats, 1):
+                    print(f"    {i}. {title} (ID: {cid})")
+                pilih = input("  Pakai nomor berapa? [1]: ").strip() or "1"
+                t["chat_id"] = str(chats[int(pilih) - 1][0])
+                print(f"  → Chat ID: {t['chat_id']}")
+            except Exception as e:
+                print(f"  ❌ Gagal: {str(e)[:100]}")
+        elif sub == "3":
+            t["notify_manual"] = not t.get("notify_manual", True)
+        elif sub == "4":
+            t["manual_timeout_minutes"] = ask_int(
+                "Timeout manual (menit)", t.get("manual_timeout_minutes", 10), 1, 120)
+        elif sub == "5":
+            t["notify_success"] = not t.get("notify_success", False)
+        elif sub == "6":
+            if not _tg.enabled():
+                print("  ❌ Bot token/chat_id belum lengkap.")
+                continue
+            ok = _tg.send_message("🔔 Test notif dari cf-auto — konfigurasi OK!")
+            print(f"  {'✅ Terkirim, cek Telegram.' if ok else '❌ Gagal kirim.'}")
+        elif sub == "7":
+            break
+        else:
+            print("  ❌ Pilihan tidak valid.")
+            continue
+        cfg["telegram"] = t
+        save_config(cfg)
+        cfg = load_config()
+        t = cfg.get("telegram", {})
 
 
 def menu_naming(cfg):

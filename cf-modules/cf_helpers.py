@@ -384,6 +384,86 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
         pass
 
     log.warning("⚠ Turnstile belum ter-solve dalam %ds.", timeout)
+
+    # ── Fallback manual: notif Telegram + tunggu klik manusia ──
+    return _wait_manual_help(page)
+
+
+def _wait_manual_help(page: Page) -> bool:
+    """Kirim notif Telegram (screenshot), lalu tunggu solved secara manual.
+
+    Timeout dari config telegram.manual_timeout_minutes (default 10).
+    Return True kalau solved (klik manual via VNC / challenge selesai).
+    """
+    try:
+        import cf_telegram
+    except Exception:
+        return False
+
+    tcfg = cf_telegram._cfg()
+    if not cf_telegram.enabled() or not tcfg.get("notify_manual", True):
+        return False
+
+    manual_deadline = time.time() + int(
+        tcfg.get("manual_timeout_minutes", 10)) * 60
+    notified = False
+
+    log.info("→ Mode bantuan manual: notif Telegram + tunggu hingga %d menit...",
+             int(tcfg.get("manual_timeout_minutes", 10)))
+
+    while time.time() < manual_deadline:
+        # solved?
+        try:
+            val = page.evaluate("""() => {
+                const el = document.querySelector(
+                    'input[name="cf_challenge_response"]'
+                );
+                return el ? el.value : null;
+            }""")
+            if val and len(val) > 20:
+                log.info("✓✓✓ Turnstile solved (manual help)!")
+                cf_telegram.send_message(
+                    "✅ <b>Solved!</b> Batch lanjut otomatis.")
+                return True
+        except Exception:
+            # Page bisa saja sudah ditutup/navigasi — keluar
+            return False
+
+        # Kirim notif sekali (setelah 5 detik pertama, biar screenshot fresh)
+        if not notified:
+            try:
+                debug_dir = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "debug")
+                os.makedirs(debug_dir, exist_ok=True)
+                shot = os.path.join(debug_dir, "turnstile_manual.png")
+                page.screenshot(path=shot)
+                cf_telegram.notify_manual_need(
+                    idx=0, email=page.url[:60],
+                    reason="Turnstile butuh klik manual",
+                    screenshot_path=shot)
+                notified = True
+            except Exception:
+                pass
+
+        # Setelah notif, bantu re-klik sekali tiap 30 detik (kadang
+        # challenge baru muncul setelah klik manual pertama)
+        time.sleep(5)
+        try:
+            for frame in page.frames:
+                if "challenges.cloudflare.com" in (frame.url or ""):
+                    try:
+                        frame.click("body", timeout=2000,
+                                    position={"x": 28, "y": 28})
+                    except Exception:
+                        pass
+                    break
+        except Exception:
+            pass
+        time.sleep(25)
+
+    log.warning("⚠ Bantuan manual timeout — Turnstile tetap belum solved.")
+    cf_telegram.send_message("⏰ Timeout bantuan manual — akun ini di-skip.")
     return False
 
 

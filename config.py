@@ -49,6 +49,13 @@ DEFAULTS = {
         "delay_between_minutes": 5,
         "kill_browser_between": True,
     },
+    "telegram": {
+        "bot_token": "",
+        "chat_id": "",
+        "notify_manual": True,
+        "manual_timeout_minutes": 10,
+        "notify_success": False,
+    },
     "storage": {
         "accounts_file": "accounts.json",
         "csv_file": "accounts.csv",
