@@ -31,11 +31,33 @@ flowchart LR
 
 | # | Modul | Hasil |
 |---|---|---|
-| 1 | Signup | Akun CF baru + solve Turnstile otomatis |
+| 1 | Signup | Akun CF baru + solve Turnstile otomatis (5 lapis strategi) |
+| 1b | Email sudah terdaftar? | Fallback: login → reset password via email → lanjut |
 | 2 | Konfirmasi Email | Verify via workers-and-pages (satu tab, tanpa tab baru) |
 | 3 | Global API Key | Kode verifikasi email → modal View → API Key |
 | 4 | Workers AI Token | Token `cfut_...` (nama sesuai config) |
 | 5 | Worker Token | Template "Edit Cloudflare Workers" + resources otomatis |
+
+## 🛡️ Anti-Abuse & Anti-Stuck
+
+| Fitur | Default | Config |
+|---|---|---|
+| Kuota harian (hitung dari accounts.json per tanggal) | 10 akun/hari | `limits.max_per_day` |
+| Jeda antar akun + countdown log | 5 menit | `limits.delay_between_minutes` |
+| Kill browser antar akun (anti numpuk memori, fresh start) | ON | `limits.kill_browser_between` |
+| Email "already exists" → login/reset otomatis | ON | otomatis |
+| Turnstile 5 strategi: klik iframe → mouse → text → **injected widget** → manual | otomatis | — |
+| Notif Telegram + screenshot saat butuh klik manual | ON jika disetup | `telegram.*` |
+
+**Notif Telegram** — setup via menu 4 → 7 (bot token dari @BotFather, chat ID
+terdeteksi otomatis). Kalau semua strategi Turnstile gagal, runner kirim
+screenshot + link VNC, tunggu klik manual (default 10 menit, config
+`manual_timeout_minutes`), lalu lanjut otomatis setelah solved.
+
+**Reset password otomatis** — signup ditolak karena email pernah daftar?
+Runner login dengan password config; kalau salah, buka
+`dash.cloudflare.com/forgot-password` → ambil reset code dari URL di email →
+set password baru → login → lanjut modul 2-5. Password final tersimpan.
 
 ## 📦 Output — 3 Format Sinkron
 
@@ -168,7 +190,27 @@ nomor,nama,status
     "wordlist_file": "wordlist.csv"
   },
   "password": { "mode": "random", "fixed": "", "length": 16 },
-  "browser": { "headless": "virtual", "proxy": "" },
+  "browser": {
+    "headless": "virtual",
+    "proxy": "",
+    "vnc": false,
+    "vnc_mode": "permanent",
+    "vnc_display": ":98",
+    "vnc_port": 6081,
+    "vnc_domain": "vnc-cfauto.example.com"
+  },
+  "limits": {
+    "max_per_day": 10,
+    "delay_between_minutes": 5,
+    "kill_browser_between": true
+  },
+  "telegram": {
+    "bot_token": "",
+    "chat_id": "",
+    "notify_manual": true,
+    "manual_timeout_minutes": 10,
+    "notify_success": false
+  },
   "storage": {
     "accounts_file": "accounts.json",
     "csv_file": "accounts.csv",
@@ -236,20 +278,24 @@ Bonus: IP residential rumah = trust Cloudflare tinggi = Turnstile lebih ramah da
 
 ```
 cf-auto/
-├── main.py              # Flow lengkap 5 modul
-├── menu.py          # Super menu interaktif
-├── config.py           # Config + storage + wordlist engine
-├── install.sh             # Installer cross-platform
-├── config.example.json    # Template config
-├── wordlist.csv           # Nama email (nomor,nama,status)
+├── main.py              # Entry: loop akun + limits + kill browser
+├── menu.py              # Super menu interaktif
+├── config.py            # Config + storage + wordlist engine
+├── vnc.py               # VNC stack manager (Xvfb/x11vnc/noVNC/tunnel)
+├── install.sh           # Installer cross-platform
+├── config.example.json  # Template config
+├── wordlist.csv         # Nama email (nomor,nama,status)
 ├── cf-modules/
-│   ├── cf_helpers.py      # Shared: Turnstile solver, fill, click
-│   ├── cf_signup.py       # Modul 1
-│   ├── cf_confirm_email.py# Modul 2
-│   ├── cf_get_apikey.py   # Modul 3
-│   ├── cf_workers_ai.py   # Modul 4
+│   ├── cf_helpers.py    # Shared: Turnstile 5 strategi, fill, click
+│   ├── cf_signup.py     # Modul 1a (deteksi email taken)
+│   ├── cf_login.py      # Modul 1b (fallback login)
+│   ├── cf_reset_pass.py # Modul 1c (reset password via email)
+│   ├── cf_telegram.py   # Notif Telegram (manual help)
+│   ├── cf_confirm_email.py # Modul 2
+│   ├── cf_get_apikey.py # Modul 3
+│   ├── cf_workers_ai.py # Modul 4
 │   └── cf_worker_token.py # Modul 5
-└── docs/                  # PRD, arsitektur, testing
+└── docs/                # PRD, arsitektur, testing
 ```
 
 ## 🔒 Security
