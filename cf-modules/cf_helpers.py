@@ -385,8 +385,126 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
 
     log.warning("⚠ Turnstile belum ter-solve dalam %ds.", timeout)
 
+    # ── STRATEGI BARU: inject widget dummy & solve via Turnstile API resmi ──
+    # (teknik dari Turnstile-Solver/Boterdrop: render widget sendiri,
+    #  biarkan auto-solve, ambil token dari input cf-turnstile-response,
+    #  lalu tempel ke field response form asli)
+    try:
+        if _solve_via_injected_widget(page):
+            return True
+    except Exception as e:
+        log.warning("⚠ Strategi injected-widget gagal: %s", str(e)[:80])
+
     # ── Fallback manual: notif Telegram + tunggu klik manusia ──
     return _wait_manual_help(page)
+
+
+def _solve_via_injected_widget(page: Page) -> bool:
+    """Solve Turnstile dengan inject widget dummy ke halaman sekarang.
+
+    - Ambil sitekey dari widget asli (data-sitekey / input config)
+    - Inject <div class="cf-turnstile"> + script api.js resmi
+    - Widget baru biasanya non-interactive → auto-solve (tanpa klik)
+    - Ambil token dari [name=cf-turnstile-response] → paste ke form asli
+    """
+    log.info("→ Strategi injected-widget: render widget solver sendiri...")
+
+    # 1. Ambil sitekey dari widget asli
+    sitekey = page.evaluate("""() => {
+        // Widget asli CF di halaman signup
+        const el = document.querySelector('[data-sitekey]')
+            || document.querySelector('div[class*="turnstile"]');
+        if (el && el.dataset && el.dataset.sitekey) return el.dataset.sitekey;
+        // Cari di semua iframe src (kadang sitekey di query string)
+        for (const f of document.querySelectorAll('iframe')) {
+            const m = (f.src || '').match(/sitekey=([0-9a-zA-Z_-]+)/);
+            if (m) return m[1];
+        }
+        return null;
+    }""")
+    if not sitekey:
+        log.info("  sitekey tidak ditemukan di halaman")
+        return False
+    log.info("  sitekey: %s", sitekey[:20])
+
+    # 2. Cek apakah halaman sudah punya turnstile API script — kalau belum, inject
+    has_api = page.evaluate(
+        "() => !!document.querySelector("
+        "'script[src*=\"challenges.cloudflare.com/turnstile\"]')")
+    if not has_api:
+        page.evaluate("""() => {
+            const s = document.createElement('script');
+            s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+            s.async = true;
+            document.head.appendChild(s);
+        }""")
+        time.sleep(2)
+
+    # 3. Inject widget dummy (di luar viewport, tidak mengganggu layout)
+    page.evaluate("""(sitekey) => {
+        if (document.getElementById('__cfauto_solver')) return;
+        const wrap = document.createElement('div');
+        wrap.id = '__cfauto_solver';
+        wrap.style.cssText = 'position:fixed;bottom:0;right:0;'
+            + 'width:320px;height:80px;z-index:99999;opacity:0.01;';
+        wrap.innerHTML = '<div class="cf-turnstile" data-sitekey="'
+            + sitekey + '"></div>';
+        document.body.appendChild(wrap);
+    }""", sitekey)
+    time.sleep(2)
+
+    # 4. Poll token dari widget dummy sampai terisi (max 60s)
+    token = None
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        try:
+            token = page.evaluate("""() => {
+                const el = document.querySelector(
+                    '#__cfauto_solver [name=cf-turnstile-response]');
+                return el ? el.value : null;
+            }""")
+            if token and len(token) > 20:
+                break
+            # widget kadang perlu satu klik
+            page.locator('#__cfauto_solver .cf-turnstile').click(
+                timeout=1000, force=True)
+        except Exception:
+            pass
+        time.sleep(1.5)
+
+    if not token:
+        log.info("  widget dummy tidak menghasilkan token dalam 60s")
+        return False
+    log.info("✓ Token didapat dari widget dummy: %s...", token[:25])
+
+    # 5. Tempel token ke field response form asli
+    pasted = page.evaluate("""(token) => {
+        // Cari input response asli (bukan punya widget dummy)
+        const candidates = document.querySelectorAll(
+            '[name=cf-turnstile-response], [name="cf_challenge_response"]');
+        for (const el of candidates) {
+            if (el.closest('#__cfauto_solver')) continue;
+            el.value = token;
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        }
+        // Kalau field response ada di dalam iframe widget asli
+        for (const f of document.querySelectorAll('iframe')) {
+            try {
+                const w = f.contentWindow.document.querySelector(
+                    '[name=cf-turnstile-response]');
+                if (w) { w.value = token; return true; }
+            } catch (e) {}
+        }
+        return false;
+    }""", token)
+    if pasted:
+        log.info("✓ Token ditempel ke form asli — submit bisa lanjut")
+        return True
+
+    log.info("  field response asli tidak ditemukan")
+    return False
 
 
 def _wait_manual_help(page: Page) -> bool:
