@@ -395,8 +395,66 @@ def wait_for_turnstile(page: Page, timeout: int = 90) -> bool:
     except Exception as e:
         log.warning("⚠ Strategi injected-widget gagal: %s", str(e)[:80])
 
+    # ── STRATEGI 6: solver-server (browser terpisah, mesin & IP sama) ──
+    # cf-auto bukan pengganti strategi di atas — ini lapisan setelahnya.
+    try:
+        if _solve_via_solver_server(page):
+            return True
+    except Exception as e:
+        log.warning("⚠ Strategi solver-server gagal: %s", str(e)[:80])
+
     # ── Fallback manual: notif Telegram + tunggu klik manusia ──
     return _wait_manual_help(page)
+
+
+def _get_turnstile_sitekey(page: Page) -> Optional[str]:
+    """Ambil sitekey widget Turnstile dari halaman (data-sitekey / query iframe)."""
+    try:
+        return page.evaluate("""() => {
+            const el = document.querySelector('[data-sitekey]')
+                || document.querySelector('div[class*="turnstile"]');
+            if (el && el.dataset && el.dataset.sitekey) return el.dataset.sitekey;
+            for (const f of document.querySelectorAll('iframe')) {
+                const m = (f.src || '').match(/sitekey=([0-9a-zA-Z_-]+)/);
+                if (m) return m[1];
+            }
+            return null;
+        }""")
+    except Exception:
+        return None
+
+
+def _paste_turnstile_token(page: Page, token: str, exclude_selector: str = "") -> bool:
+    """Tempel token ke field response form asli.
+
+    exclude_selector dipakai kalau ada widget dummy sendiri di halaman
+    (token dummy bisa tertukar dengan field form asli).
+    """
+    try:
+        return bool(page.evaluate("""([token, exclude]) => {
+            // Cari input response asli
+            const candidates = document.querySelectorAll(
+                '[name=cf-turnstile-response], [name="cf_challenge_response"]');
+            for (const el of candidates) {
+                if (exclude && el.closest(exclude)) continue;
+                el.value = token;
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                return true;
+            }
+            // Kalau field response ada di dalam iframe widget asli
+            for (const f of document.querySelectorAll('iframe')) {
+                try {
+                    const w = f.contentWindow.document.querySelector(
+                        '[name=cf-turnstile-response]');
+                    if (w) { w.value = token; return true; }
+                } catch (e) {}
+            }
+            return false;
+        }""", [token, exclude_selector]))
+    except Exception as exc:
+        log.info("  gagal tempel token: %s", str(exc)[:80])
+        return False
 
 
 def _solve_via_injected_widget(page: Page) -> bool:
@@ -410,18 +468,7 @@ def _solve_via_injected_widget(page: Page) -> bool:
     log.info("→ Strategi injected-widget: render widget solver sendiri...")
 
     # 1. Ambil sitekey dari widget asli
-    sitekey = page.evaluate("""() => {
-        // Widget asli CF di halaman signup
-        const el = document.querySelector('[data-sitekey]')
-            || document.querySelector('div[class*="turnstile"]');
-        if (el && el.dataset && el.dataset.sitekey) return el.dataset.sitekey;
-        // Cari di semua iframe src (kadang sitekey di query string)
-        for (const f of document.querySelectorAll('iframe')) {
-            const m = (f.src || '').match(/sitekey=([0-9a-zA-Z_-]+)/);
-            if (m) return m[1];
-        }
-        return null;
-    }""")
+    sitekey = _get_turnstile_sitekey(page)
     if not sitekey:
         log.info("  sitekey tidak ditemukan di halaman")
         return False
@@ -477,32 +524,54 @@ def _solve_via_injected_widget(page: Page) -> bool:
         return False
     log.info("✓ Token didapat dari widget dummy: %s...", token[:25])
 
-    # 5. Tempel token ke field response form asli
-    pasted = page.evaluate("""(token) => {
-        // Cari input response asli (bukan punya widget dummy)
-        const candidates = document.querySelectorAll(
-            '[name=cf-turnstile-response], [name="cf_challenge_response"]');
-        for (const el of candidates) {
-            if (el.closest('#__cfauto_solver')) continue;
-            el.value = token;
-            el.dispatchEvent(new Event('input', {bubbles: true}));
-            el.dispatchEvent(new Event('change', {bubbles: true}));
-            return true;
-        }
-        // Kalau field response ada di dalam iframe widget asli
-        for (const f of document.querySelectorAll('iframe')) {
-            try {
-                const w = f.contentWindow.document.querySelector(
-                    '[name=cf-turnstile-response]');
-                if (w) { w.value = token; return true; }
-            } catch (e) {}
-        }
-        return false;
-    }""", token)
-    if pasted:
+    # 5. Tempel token ke field response form asli (lewati input widget dummy)
+    if _paste_turnstile_token(page, token, exclude_selector="#__cfauto_solver"):
         log.info("✓ Token ditempel ke form asli — submit bisa lanjut")
         return True
 
+    log.info("  field response asli tidak ditemukan")
+    return False
+
+
+def _solve_via_solver_server(page: Page) -> bool:
+    """Strategi solver-server: minta token dari service solver lokal (HTTP).
+
+    solver-server menjalankan browser sendiri di MESIN YANG SAMA (IP sama),
+    jadi token Turnstile-nya sah untuk form yang disubmit runner ini. Bisa
+    dimatikan lewat config.solver.enabled; kalau service mati, langsung lewati
+    tanpa menggagalkan alur.
+    """
+    try:
+        import config
+        cfg = config.load_config()
+    except Exception as exc:
+        log.info("  solver-server dilewati: config tidak terbaca (%s)", str(exc)[:80])
+        return False
+
+    try:
+        import cf_solver_client as solver
+    except Exception as exc:
+        log.info("  solver-server dilewati: modul klien hilang (%s)", str(exc)[:80])
+        return False
+
+    if not solver.is_enabled(cfg):
+        log.info("  solver-server nonaktif (config.solver.enabled=false)")
+        return False
+
+    sitekey = _get_turnstile_sitekey(page) or str(
+        (cfg.get("solver") or {}).get("sitekey") or "") or None
+    if not sitekey:
+        log.info("  solver-server: sitekey tidak diketahui (halaman + config kosong)")
+        return False
+
+    log.info("→ Strategi solver-server: %s (sitekey %s...)", solver.base_url(cfg), sitekey[:16])
+    token = solver.solve_turnstile(cfg, page.url, sitekey)
+    if not token:
+        return False
+
+    if _paste_turnstile_token(page, token):
+        log.info("✓ Token solver-server ditempel ke form asli — submit bisa lanjut")
+        return True
     log.info("  field response asli tidak ditemukan")
     return False
 

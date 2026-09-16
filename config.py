@@ -56,6 +56,13 @@ DEFAULTS = {
         "manual_timeout_minutes": 10,
         "notify_success": False,
     },
+    "solver": {
+        "enabled": True,
+        "base_url": "http://127.0.0.1:8001",
+        "timeout": 90,
+        "probe_timeout": 3,
+        "sitekey": "",
+    },
     "storage": {
         "accounts_file": "accounts.json",
         "csv_file": "accounts.csv",
