@@ -423,8 +423,9 @@ def _solve_via_injected_widget(page: Page) -> bool:
         return null;
     }""")
     if not sitekey:
-        log.info("  sitekey tidak ditemukan di halaman")
-        return False
+        # Fallback: sitekey signup Cloudflare (statis, dari studi halaman)
+        sitekey = "0x4AAAAAAAJel0iaAR3mgkjp"
+        log.info("  sitekey tidak ada di DOM — pakai sitekey CF default")
     log.info("  sitekey: %s", sitekey[:20])
 
     # 2. Cek apakah halaman sudah punya turnstile API script — kalau belum, inject
@@ -547,8 +548,18 @@ def _wait_manual_help(page: Page) -> bool:
             # Page bisa saja sudah ditutup/navigasi — keluar
             return False
 
-        # Kirim notif sekali (setelah 5 detik pertama, biar screenshot fresh)
+        # Kirim notif sekali — TEKS DULU (tanpa dependensi screenshot),
+        # screenshot best-effort terpisah supaya notif tidak pernah tertelan
         if not notified:
+            try:
+                cf_telegram.notify_manual_need(
+                    idx=0, email=page.url[:60],
+                    reason="Turnstile butuh klik manual",
+                    screenshot_path=None)
+                notified = True
+                log.info("✓ Notif Telegram terkirim")
+            except Exception as e:
+                log.warning("⚠ Notif teks gagal: %s", str(e)[:80])
             try:
                 debug_dir = os.path.join(
                     os.path.dirname(os.path.abspath(__file__)),
@@ -556,13 +567,11 @@ def _wait_manual_help(page: Page) -> bool:
                 os.makedirs(debug_dir, exist_ok=True)
                 shot = os.path.join(debug_dir, "turnstile_manual.png")
                 page.screenshot(path=shot)
-                cf_telegram.notify_manual_need(
-                    idx=0, email=page.url[:60],
-                    reason="Turnstile butuh klik manual",
-                    screenshot_path=shot)
-                notified = True
-            except Exception:
-                pass
+                cf_telegram.send_photo(
+                    shot, caption=f"Akun — {page.url[:60]}")
+            except Exception as e:
+                log.warning("⚠ Screenshot notif gagal (tidak fatal): %s",
+                            str(e)[:80])
 
         # Setelah notif, bantu re-klik sekali tiap 30 detik (kadang
         # challenge baru muncul setelah klik manual pertama)
