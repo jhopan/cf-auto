@@ -45,6 +45,100 @@ __all__ = ["GetWorkerToken"]
 API_TOKENS_URL = "https://dash.cloudflare.com/profile/api-tokens"
 
 
+def _click_account_option(page: Page, email: str) -> bool:
+    """Klik dropdown Account Resources lalu pilih akun yang cocok email.
+
+    Form CF pakai <BUTTON aria-haspopup="listbox"> custom. Langkah:
+    1. Klik button 'Select...' (sudah di-scroll oleh pemanggil)
+    2. Tunggu menu (role=listbox / option visible)
+    3. Pilih option yang mengandung email prefix (case-insensitive)
+    """
+    email_prefix = (email or "").split("@")[0].lower()
+    log.info("→ Klik button Select... (Account Resources)")
+
+    # klik button 'Select...' di section Account Resources
+    page.evaluate("""() => {
+        const btns = Array.from(document.querySelectorAll(
+            'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
+        for (const b of btns) {
+            const txt = (b.textContent || '').trim();
+            if (txt !== 'Select...') continue;
+            let p = b.parentElement;
+            for (let j = 0; j < 10; j++) {
+                if (!p) break;
+                const pt = (p.textContent || '');
+                if (pt.includes('Account Resources')
+                        && !pt.includes('Zone Resources')) {
+                    // PointerEvent + MouseEvent (pola checker email)
+                    b.dispatchEvent(new PointerEvent('pointerdown',
+                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                    b.dispatchEvent(new PointerEvent('pointerup',
+                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
+                    b.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+                    b.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
+                    b.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                    b.click();
+                    return true;
+                }
+                p = p.parentElement;
+            }
+        }
+        return false;
+    }""")
+
+    # tunggu menu
+    menu_found = False
+    for _ in range(10):
+        time.sleep(0.5)
+        menu_found = page.evaluate("""() => {
+            const lb = document.querySelector('[role="listbox"]');
+            if (lb) {
+                const r = lb.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) return true;
+            }
+            return false;
+        }""")
+        if menu_found:
+            break
+    if menu_found:
+        log.info("→ Menu Account terbuka")
+    else:
+        log.warning("⚠ Menu Account tidak terdeteksi")
+        time.sleep(2)
+
+    # cari option dengan email prefix
+    opt = page.evaluate(f"""() => {{
+        const all = document.querySelectorAll('*');
+        const results = [];
+        for (const o of all) {{
+            const t = (o.textContent || '').trim();
+            if (t.length > 0 && t.length < 80) {{
+                const r = o.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0 && r.height < 60) {{
+                    results.push({{
+                        text: t.slice(0, 60),
+                        x: r.x + r.width/2,
+                        y: r.y + r.height/2,
+                    }});
+                }}
+            }}
+        }}
+        return results;
+    }}""")
+    for o in opt:
+        t = (o.get("text", "") or "").lower()
+        if t.startswith("all accounts"):
+            continue  # jangan pilih All accounts
+        if email_prefix in t:
+            page.mouse.click(o["x"], o["y"])
+            log.info("✓ Akun dipilih: %s", o["text"][:40])
+            return True
+
+    log.warning("⚠ Option akun (%s...) tidak ditemukan", email_prefix[:12])
+    page.keyboard.press("Escape")
+    return False
+
+
 class GetWorkerToken:
     """Module 5: Buat API Token dengan template Edit Cloudflare Workers."""
 
@@ -156,130 +250,14 @@ class GetWorkerToken:
         _time.sleep(5)
 
         print(">>> STEP D START", flush=True)
-        # --- Step D: Account Resources → pilih akun ---
-        # Pendekatan: JS cari koordinat → page.mouse.click()
-        log.info("→ Setting Account Resources...")
+        # --- Step D: Account Resources -> pilih akun ---
+        # Form CF pakai <BUTTON aria-haspopup=listbox> custom,
+        # helper _click_account_option handle scroll+klik+pilih
+        log.info("-> Setting Account Resources...")
         account_selected = False
 
         try:
-            pos = page.evaluate("""() => {
-                const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
-                for (const ctrl of ctrls) {
-                    if (ctrl.textContent.includes('Select...')) {
-                        let p = ctrl;
-                        for (let j = 0; j < 15; j++) {
-                            p = p.parentElement;
-                            if (!p) break;
-                            if (p.textContent.includes('Account Resources') && !p.textContent.includes('Zone Resources')) {
-                                const r = ctrl.getBoundingClientRect();
-                                return {x: r.x + r.width/2, y: r.y + r.height/2};
-                            }
-                        }
-                    }
-                }
-                return null;
-            }""")
-            if pos:
-                log.info("→ Klik dropdown Account di (%.0f, %.0f)", pos['x'], pos['y'])
-                # Klik control dengan PointerEvent (dari checker email pattern)
-                page.evaluate("""() => {
-                    const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
-                    for (const ctrl of ctrls) {
-                        if (ctrl.textContent.includes('Select...')) {
-                            let p = ctrl;
-                            for (let j = 0; j < 15; j++) {
-                                p = p.parentElement;
-                                if (!p) break;
-                                if (p.textContent.includes('Account Resources') && !p.textContent.includes('Zone Resources')) {
-                                    // PointerEvent + MouseEvent (dari checker email)
-                                    ctrl.dispatchEvent(new PointerEvent('pointerdown',
-                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                    ctrl.dispatchEvent(new PointerEvent('pointerup',
-                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                    ctrl.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
-                                    ctrl.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
-                                    ctrl.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
-                                    ctrl.click();
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                    return false;
-                }""")
-                # Tunggu menu muncul — cek div dengan role="listbox" atau class menu
-                menu_found = False
-                for _ in range(10):
-                    time.sleep(0.5)
-                    menu_found = page.evaluate("""() => {
-                        // react-select menu bisa pakai class berbeda
-                        // Cek: ada div dengan role="listbox" yang visible?
-                        const lb = document.querySelector('[role="listbox"]');
-                        if (lb) {
-                            const r = lb.getBoundingClientRect();
-                            if (r.width > 0 && r.height > 0) return true;
-                        }
-                        // Atau cek div yang baru muncul dengan z-index tinggi
-                        const menus = document.querySelectorAll('[class*="menu"], [class*="Menu"]');
-                        for (const m of menus) {
-                            const r = m.getBoundingClientRect();
-                            if (r.width > 100 && r.height > 50) return true;
-                        }
-                        return false;
-                    }""")
-                    if menu_found:
-                        break
-                if menu_found:
-                    log.info("→ Menu Account terbuka")
-                else:
-                    log.warning("⚠ Menu Account tidak terdeteksi, coba tunggu lebih lama")
-                    time.sleep(2)
-
-                email_prefix = self.email.split("@")[0]
-                # Dump SEMUA element di dalam react-select__menu
-                opt = page.evaluate(f"""() => {{
-                    const menu = document.querySelector(
-                        '[class*="react-select__menu"]'
-                    );
-                    if (!menu) return [{{error: 'no menu found'}}];
-                    const all = menu.querySelectorAll('*');
-                    const results = [];
-                    for (const o of all) {{
-                        const t = (o.textContent || '').trim();
-                        if (t.length > 0 && t.length < 80) {{
-                            const r = o.getBoundingClientRect();
-                            if (r.width > 0 && r.height > 0) {{
-                                results.push({{
-                                    tag: o.tagName,
-                                    text: t.slice(0, 50),
-                                    cls: (o.className||'').toString().slice(0, 40),
-                                    x: r.x + r.width/2, y: r.y + r.height/2,
-                                    h: r.height,
-                                }});
-                            }}
-                        }}
-                    }}
-                    return results.slice(0, 15);
-                }}""")
-                if opt:
-                    log.info("→ Menu elements: %d", len(opt))
-                    for o in opt:
-                        log.info("  <%s> '%s' cls='%s' pos=(%.0f,%.0f) h=%.0f",
-                                 o.get('tag',''), o.get('text','')[:35],
-                                 o.get('cls','')[:25],
-                                 o.get('x',0), o.get('y',0), o.get('h',0))
-                    for o in opt:
-                        t = o.get('text', '')
-                        if email_prefix.lower() in t.lower():
-                            page.mouse.click(o['x'], o['y'])
-                            account_selected = True
-                            log.info("✓ Akun dipilih: %s", t[:40])
-                            break
-                else:
-                    log.warning("⚠ Option akun tidak ditemukan")
-                    page.keyboard.press("Escape")
-            else:
-                log.warning("⚠ Dropdown Account tidak ditemukan")
+            account_selected = _click_account_option(page, self.email)
         except Exception as e:
             log.warning("⚠ Account error: %s", str(e)[:100])
 
@@ -445,6 +423,38 @@ class GetWorkerToken:
             pass
 
         time.sleep(1.0)
+
+        # --- HARD GATE: jangan klik summary kalau Account Resources
+        # belum terpilih — form akan tetap di halaman & token tidak muncul ---
+        if not account_selected:
+            try:
+                body = page.inner_text("body")
+                if "Choose an account resource" in body:
+                    log.error("✗ Account Resources masih kosong - form belum valid")
+            except Exception:
+                pass
+            # retry sekali: scroll ke 'Select...' lalu coba helper lagi
+            try:
+                page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll(
+                        'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
+                    for (const b of btns) {
+                        if ((b.textContent || '').trim() !== 'Select...') continue;
+                        b.scrollIntoView({block: 'center'});
+                        return true;
+                    }
+                    return false;
+                }""")
+                time.sleep(1.5)
+                if _click_account_option(page, self.email):
+                    account_selected = True
+                    log.info("✓ Retry Account Resources berhasil")
+            except Exception as e:
+                log.warning("⚠ Retry account gagal: %s", str(e)[:80])
+
+        if not account_selected:
+            log.error("✗ Gagal pilih Account Resources setelah retry - abort Module 5")
+            return None
 
         # --- Step F: Klik "Continue to summary" ---
         log.info("→ Klik 'Continue to summary'...")
