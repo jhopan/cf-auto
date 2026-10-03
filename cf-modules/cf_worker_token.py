@@ -56,8 +56,11 @@ def _click_account_option(page: Page, email: str) -> bool:
     email_prefix = (email or "").split("@")[0].lower()
     log.info("→ Klik button Select... (Account Resources)")
 
-    # klik button 'Select...' di section Account Resources
-    page.evaluate("""() => {
+    # klik button 'Select...' di section Account Resources — SCROLL
+    # ke posisi terlihat dulu, lalu klik REAL (page.mouse).
+    # Event sintetik (dispatchEvent) ke elemen di luar viewport
+    # diabaikan React/custom dropdown CF.
+    found = page.evaluate("""() => {
         const btns = Array.from(document.querySelectorAll(
             'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
         for (const b of btns) {
@@ -69,15 +72,7 @@ def _click_account_option(page: Page, email: str) -> bool:
                 const pt = (p.textContent || '');
                 if (pt.includes('Account Resources')
                         && !pt.includes('Zone Resources')) {
-                    // PointerEvent + MouseEvent (pola checker email)
-                    b.dispatchEvent(new PointerEvent('pointerdown',
-                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                    b.dispatchEvent(new PointerEvent('pointerup',
-                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                    b.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
-                    b.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
-                    b.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
-                    b.click();
+                    b.scrollIntoView({block: 'center'});
                     return true;
                 }
                 p = p.parentElement;
@@ -85,6 +80,41 @@ def _click_account_option(page: Page, email: str) -> bool:
         }
         return false;
     }""")
+    if not found:
+        log.warning("⚠ Dropdown Account (Select...) tidak ditemukan")
+        return False
+    time.sleep(1.0)
+
+    # ambil koordinat segar SETELAH scroll
+    r = page.evaluate("""() => {
+        const btns = Array.from(document.querySelectorAll(
+            'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
+        for (const b of btns) {
+            const txt = (b.textContent || '').trim();
+            if (txt !== 'Select...') continue;
+            let p = b.parentElement;
+            for (let j = 0; j < 10; j++) {
+                if (!p) break;
+                const pt = (p.textContent || '');
+                if (pt.includes('Account Resources')
+                        && !pt.includes('Zone Resources')) {
+                    const rect = b.getBoundingClientRect();
+                    return {
+                        x: rect.x + rect.width / 2,
+                        y: rect.y + rect.height / 2,
+                    };
+                }
+                p = p.parentElement;
+            }
+        }
+        return null;
+    }""")
+    if not r:
+        log.warning("⚠ Koordinat dropdown Account tidak didapat")
+        return False
+    log.info("→ Klik REAL dropdown Account di (%.0f, %.0f)", r['x'], r['y'])
+    page.mouse.click(r['x'], r['y'])
+    time.sleep(1.0)
 
     # tunggu menu
     menu_found = False
