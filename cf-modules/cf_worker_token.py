@@ -58,29 +58,37 @@ def _click_account_option(page: Page, email: str) -> bool:
 
     # klik button 'Select...' di section Account Resources — SCROLL
     # ke posisi terlihat dulu, lalu klik REAL (page.mouse).
-    # Event sintetik (dispatchEvent) ke elemen di luar viewport
-    # diabaikan React/custom dropdown CF.
-    found = page.evaluate("""() => {
+    # Parent-walk kadang tidak menemukan 'Account Resources' (label
+    # section bukan ancestor langsung di DOM baru CF) → fallback:
+    # ambil button 'Select...' pertama yang visible.
+    r = page.evaluate("""() => {
         const btns = Array.from(document.querySelectorAll(
             'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
-        for (const b of btns) {
-            const txt = (b.textContent || '').trim();
-            if (txt !== 'Select...') continue;
+        const selects = btns.filter(b => (b.textContent || '').trim() === 'Select...');
+        let target = null;
+        // strategy 1: parent mengandung 'Account Resources'
+        for (const b of selects) {
             let p = b.parentElement;
-            for (let j = 0; j < 10; j++) {
+            let ok = false;
+            for (let j = 0; j < 15; j++) {
                 if (!p) break;
                 const pt = (p.textContent || '');
-                if (pt.includes('Account Resources')
-                        && !pt.includes('Zone Resources')) {
-                    b.scrollIntoView({block: 'center'});
-                    return true;
-                }
+                if (pt.includes('Account Resources')) { ok = true; break; }
                 p = p.parentElement;
             }
+            if (ok) { target = b; break; }
         }
-        return false;
+        // strategy 2: fallback — ambil button 'Select...' pertama.
+        // (jangan filter visible; button Account Resources JUSTRU di bawah
+        //  layar dan itu yang mau kita scroll ke tengah)
+        if (!target && selects.length > 0) {
+            target = selects[0];
+        }
+        if (!target) return null;
+        target.scrollIntoView({block: 'center'});
+        return true;
     }""")
-    if not found:
+    if not r:
         log.warning("⚠ Dropdown Account (Select...) tidak ditemukan")
         return False
     time.sleep(1.0)
@@ -89,25 +97,25 @@ def _click_account_option(page: Page, email: str) -> bool:
     r = page.evaluate("""() => {
         const btns = Array.from(document.querySelectorAll(
             'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
-        for (const b of btns) {
-            const txt = (b.textContent || '').trim();
-            if (txt !== 'Select...') continue;
+        const selects = btns.filter(b => (b.textContent || '').trim() === 'Select...');
+        let target = null;
+        for (const b of selects) {
             let p = b.parentElement;
-            for (let j = 0; j < 10; j++) {
+            let ok = false;
+            for (let j = 0; j < 15; j++) {
                 if (!p) break;
                 const pt = (p.textContent || '');
-                if (pt.includes('Account Resources')
-                        && !pt.includes('Zone Resources')) {
-                    const rect = b.getBoundingClientRect();
-                    return {
-                        x: rect.x + rect.width / 2,
-                        y: rect.y + rect.height / 2,
-                    };
-                }
+                if (pt.includes('Account Resources')) { ok = true; break; }
                 p = p.parentElement;
             }
+            if (ok) { target = b; break; }
         }
-        return null;
+        if (!target && selects.length > 0) {
+            target = selects[0];
+        }
+        if (!target) return null;
+        const rect = target.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
     }""")
     if not r:
         log.warning("⚠ Koordinat dropdown Account tidak didapat")
