@@ -4,9 +4,8 @@ cf_worker_token.py — Module 5: Buat API Token "Edit Cloudflare Workers"
 Tanggung jawab:
   - Navigasi ke /profile/api-tokens
   - Klik "Create Token"
-  - Cari template "Edit Cloudflare Workers" → klik "Use template"
-  - Scroll ke "Account Resources" → pilih akun (BUKAN "All accounts")
-  - Scroll ke "Zone Resources" → pilih "All zones"
+  - Pilih template card "Edit Cloudflare Workers" (UI baru CF,
+    Policies terisi otomatis — Account/Zone Resources sudah dihapus CF)
   - Klik "Continue to summary"
   - Klik "Create Token"
   - Copy token (cfut_...)
@@ -210,6 +209,13 @@ class GetWorkerToken:
         dismiss_cookie_banner(page)
         log.info("  URL: %s", page.url)
 
+        # Guard: kalau di-redirect ke /login, session tidak valid
+        # (bisa karena CF membatasi IP: 403/rate-limit)
+        if "/login" in page.url:
+            log.error("✗ Session tidak login (redirect ke /login) — "
+                      "kemungkinan CF membatasi IP ini")
+            return None
+
         # --- Step B: Klik "Create Token" ---
         log.info("→ Klik Create Token...")
         create_clicked = False
@@ -237,262 +243,118 @@ class GetWorkerToken:
 
         time.sleep(3.0)
 
-        # --- Step C: Cari template "Edit Cloudflare Workers" → klik "Use template" ---
-        log.info("→ Cari template 'Edit Cloudflare Workers'...")
-        template_clicked = False
+        # --- Step C: pilih template card 'Edit Cloudflare Workers' ---
+        # UI Cloudflare BARU: template = card button (bukan 'Use template'),
+        # dan section 'Account Resources'/'Zone Resources' SUDAH DIHAPUS CF.
+        # Card template otomatis mengisi Policies (Zone/Account/User policy).
+        log.info("→ Pilih template 'Edit Cloudflare Workers'...")
+        template_ok = False
 
+        # kalau card tidak terlihat, buka 'View all templates' dulu
         try:
-            for sel in [
-                'text="Edit Cloudflare Workers" >> .. >> button:has-text("Use template")',
-                'div:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
-                'li:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
-                'tr:has-text("Edit Cloudflare Workers") button:has-text("Use template")',
-            ]:
-                try:
-                    loc = page.locator(sel).first
-                    if loc.count() > 0:
-                        loc.click(force=True, timeout=5000)
-                        template_clicked = True
-                        log.info("✓ Klik Use template (Edit Cloudflare Workers)")
-                        break
-                except Exception:
-                    continue
-        except Exception as e:
-            log.warning("⚠ Step C locator error: %s", str(e)[:80])
-
-        if not template_clicked:
+            body_now = page.inner_text("body")
+        except Exception:
+            body_now = ""
+        if "Edit Cloudflare Workers" not in body_now:
+            log.info("→ Card tidak di layar, buka 'View all templates'...")
             try:
-                result = page.evaluate("""() => {
-                    const btns = Array.from(
-                        document.querySelectorAll('button, a')
-                    ).filter(b => b.textContent.includes('Use template'));
-                    for (const btn of btns) {
-                        const row = btn.closest('tr, div, li, section');
-                        if (row && row.textContent.includes('Edit Cloudflare Workers')) {
-                            btn.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }""")
-                if result:
-                    template_clicked = True
-                    log.info("✓ Klik Use template via JS (Edit Cloudflare Workers)")
-            except Exception as e:
-                log.warning("⚠ Step C JS error: %s", str(e)[:80])
+                page.click('button:has-text("View all templates")', timeout=6000)
+                time.sleep(4)
+            except Exception:
+                pass
 
-        if not template_clicked:
-            log.error("✗ Template 'Edit Cloudflare Workers' tidak ditemukan!")
+        for sel in [
+            'button:has-text("Edit Cloudflare Workers")',
+            'a:has-text("Edit Cloudflare Workers")',
+        ]:
+            try:
+                el = page.wait_for_selector(sel, timeout=5000, state="visible")
+                if el:
+                    el.scroll_into_view_if_needed(timeout=3000)
+                    el.click(timeout=5000)
+                    template_ok = True
+                    log.info("✓ Klik card 'Edit Cloudflare Workers' (%s)", sel)
+                    break
+            except Exception:
+                continue
 
-        import time as _time
-        _time.sleep(5)
-
-        print(">>> STEP D START", flush=True)
-        # --- Step D: Account Resources -> pilih akun ---
-        # Form CF pakai <BUTTON aria-haspopup=listbox> custom,
-        # helper _click_account_option handle scroll+klik+pilih
-        log.info("-> Setting Account Resources...")
-        account_selected = False
-
-        try:
-            account_selected = _click_account_option(page, self.email)
-        except Exception as e:
-            log.warning("⚠ Account error: %s", str(e)[:100])
-
-        time.sleep(1.0)
-
-        # --- Step E: Zone Resources → "Specific zone" → "All zones" ---
-        log.info("→ Setting Zone Resources (All zones)...")
-        zone_selected = False
-
-        try:
-            zpos = page.evaluate("""() => {
-                const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
-                for (const ctrl of ctrls) {
-                    if (ctrl.textContent.includes('Specific zone')) {
-                        let p = ctrl;
-                        for (let j = 0; j < 15; j++) {
-                            p = p.parentElement;
-                            if (!p) break;
-                            if (p.textContent.includes('Zone Resources')) {
-                                const r = ctrl.getBoundingClientRect();
-                                return {x: r.x + r.width/2, y: r.y + r.height/2};
-                            }
-                        }
-                    }
+        if not template_ok:
+            template_ok = page.evaluate("""() => {
+                const bs = Array.from(document.querySelectorAll('button, a'));
+                const b = bs.find(e => (e.textContent || '')
+                    .includes('Edit Cloudflare Workers'));
+                if (b) {
+                    b.scrollIntoView({block: 'center'});
+                    b.click();
+                    return true;
                 }
-                return null;
+                return false;
             }""")
-            if zpos:
-                log.info("→ Klik dropdown Zone di (%.0f, %.0f)", zpos['x'], zpos['y'])
-                # Klik control dengan PointerEvent
-                page.evaluate("""() => {
-                    const ctrls = document.querySelectorAll('[class*="react-select__control"], [class*="control"]');
-                    for (const ctrl of ctrls) {
-                        if (ctrl.textContent.includes('Specific zone')) {
-                            let p = ctrl;
-                            for (let j = 0; j < 15; j++) {
-                                p = p.parentElement;
-                                if (!p) break;
-                                if (p.textContent.includes('Zone Resources')) {
-                                    ctrl.dispatchEvent(new PointerEvent('pointerdown',
-                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                    ctrl.dispatchEvent(new PointerEvent('pointerup',
-                                        {bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse'}));
-                                    ctrl.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
-                                    ctrl.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true}));
-                                    ctrl.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
-                                    ctrl.click();
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                    return false;
-                }""")
-                # Tunggu menu muncul
-                zmenu_found = False
-                for _ in range(10):
-                    time.sleep(0.5)
-                    zmenu_found = page.evaluate("""() => {
-                        return !!document.querySelector(
-                            '[class*="react-select__menu"]'
-                        );
-                    }""")
-                    if zmenu_found:
-                        break
-                if zmenu_found:
-                    log.info("→ Menu Zone terbuka")
-                else:
-                    log.warning("⚠ Menu Zone tidak terdeteksi")
-                    time.sleep(2)
+            if template_ok:
+                log.info("✓ Klik card 'Edit Cloudflare Workers' (JS)")
 
-                zopt = page.evaluate("""() => {
-                    const all = document.querySelectorAll('*');
-                    const results = [];
-                    for (const o of all) {
-                        const directText = Array.from(o.childNodes)
-                            .filter(n => n.nodeType === 3)
-                            .map(n => n.textContent.trim())
-                            .join('');
-                        if (directText === 'All zones') {
-                            const r = o.getBoundingClientRect();
-                            if (r.width > 0 && r.height > 0 && r.height < 50) {
-                                results.push({
-                                    tag: o.tagName,
-                                    text: directText,
-                                    x: r.x + r.width/2, y: r.y + r.height/2,
-                                });
-                            }
-                        }
-                    }
-                    const seen = new Set();
-                    return results.filter(r => {
-                        if (seen.has(r.text)) return false;
-                        seen.add(r.text); return true;
-                    }).slice(0, 5);
-                }""")
-                if zopt:
-                    log.info("→ Zone options: %d", len(zopt))
-                    for o in zopt:
-                        log.info("  <%s> '%s' pos=(%.0f,%.0f)",
-                                 o.get('tag',''), o.get('text','')[:30],
-                                 o.get('x',0), o.get('y',0))
-                    for o in zopt:
-                        if "All zones" in o.get('text',''):
-                            page.mouse.click(o['x'], o['y'])
-                            zone_selected = True
-                            log.info("✓ All zones dipilih")
-                            break
-                else:
-                    log.warning("⚠ Option 'All zones' tidak ditemukan")
-                    page.keyboard.press("Escape")
-            else:
-                log.warning("⚠ Dropdown Zone tidak ditemukan")
-        except Exception as e:
-            log.warning("⚠ Zone error: %s", str(e)[:100])
+        time.sleep(6)
 
-        time.sleep(1.0)
-
-        # --- Step F: Cek error merah ---
+        # verifikasi: Policies terisi setelah card dipilih
+        policies_ok = False
         try:
             body = page.inner_text("body")
-            if "Choose an account resource" in body:
-                log.error("✗ Account Resources masih kosong!")
-            if "Choose a zone resource" in body:
-                log.error("✗ Zone Resources masih kosong!")
-            if "Choose a permission" in body:
-                log.warning("⚠ Permission error (seharusnya pre-filled dari template)")
+            policies_ok = ("Zone policy" in body or "Account policy" in body
+                           or "User policy" in body)
+            if template_ok and policies_ok:
+                log.info("✓ Template terpasang — Policies terisi")
+            elif template_ok:
+                log.warning("⚠ Card diklik tapi Policies belum terlihat")
+            else:
+                log.error("✗ Card 'Edit Cloudflare Workers' tidak ditemukan")
         except Exception:
             pass
 
-        # --- DEBUG: dump semua dropdown posisi & screenshot ---
+        if not template_ok:
+            # diagnostik: tombol apa saja yang ada di layar + screenshot
+            try:
+                btns = page.evaluate("""() => Array.from(
+                        document.querySelectorAll('button, a'))
+                    .filter(e => e.offsetParent !== null)
+                    .map(e => (e.textContent || '').trim().slice(0, 45))
+                    .filter(t => t.length > 0).slice(0, 25)""")
+                log.info("→ Tombol di layar: %s", btns)
+                debug_dir = os.path.join(
+                    os.path.dirname(__file__), "..", "debug")
+                os.makedirs(debug_dir, exist_ok=True)
+                page.screenshot(path=os.path.join(
+                    debug_dir, "worker_template_fail.png"))
+                log.info("→ Screenshot: debug/worker_template_fail.png")
+            except Exception:
+                pass
+            log.error("✗ Abort Module 5 — template tidak terpasang")
+            return None
+
+        # --- Step D: Token name (opsional, biar rapi di daftar token) ---
+        try:
+            name_el = page.query_selector('input[name="name"]')
+            if name_el:
+                cur = (name_el.input_value() or "").strip()
+                if not cur:
+                    name_el.click(timeout=3000)
+                    name_el.fill("Edit Cloudflare Workers", timeout=5000)
+                    log.info("✓ Token name diisi: Edit Cloudflare Workers")
+        except Exception as e:
+            log.warning("⚠ Token name dilewati: %s", str(e)[:60])
+
+        time.sleep(1.0)
+
+        # --- Step E: screenshot debug sebelum summary ---
         try:
             debug_dir = os.path.join(
                 os.path.dirname(__file__), "..", "debug"
             )
             os.makedirs(debug_dir, exist_ok=True)
             page.screenshot(path=os.path.join(debug_dir, "before_summary.png"))
-
-            # Dump semua combobox/select position
-            dd = page.evaluate("""() => {
-                const results = [];
-                document.querySelectorAll('[role="combobox"], select, [aria-haspopup]').forEach(el => {
-                    const rect = el.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        results.push({
-                            text: (el.textContent || '').trim().slice(0, 40),
-                            tag: el.tagName,
-                            role: el.getAttribute('role'),
-                            popup: el.getAttribute('aria-haspopup'),
-                            x: Math.round(rect.x), y: Math.round(rect.y),
-                            w: Math.round(rect.width), h: Math.round(rect.height),
-                        });
-                    }
-                });
-                return results;
-            }""")
-            log.info("→ Dropdown positions:")
-            for i, d in enumerate(dd):
-                log.info("  [%d] '%s' <%s> popup=%s pos=(%d,%d) %dx%d",
-                         i, d['text'][:30], d['tag'], d['popup'],
-                         d['x'], d['y'], d['w'], d['h'])
         except Exception:
             pass
 
         time.sleep(1.0)
-
-        # --- HARD GATE: jangan klik summary kalau Account Resources
-        # belum terpilih — form akan tetap di halaman & token tidak muncul ---
-        if not account_selected:
-            try:
-                body = page.inner_text("body")
-                if "Choose an account resource" in body:
-                    log.error("✗ Account Resources masih kosong - form belum valid")
-            except Exception:
-                pass
-            # retry sekali: scroll ke 'Select...' lalu coba helper lagi
-            try:
-                page.evaluate("""() => {
-                    const btns = Array.from(document.querySelectorAll(
-                        'button[aria-haspopup="listbox"], [aria-haspopup="listbox"]'));
-                    for (const b of btns) {
-                        if ((b.textContent || '').trim() !== 'Select...') continue;
-                        b.scrollIntoView({block: 'center'});
-                        return true;
-                    }
-                    return false;
-                }""")
-                time.sleep(1.5)
-                if _click_account_option(page, self.email):
-                    account_selected = True
-                    log.info("✓ Retry Account Resources berhasil")
-            except Exception as e:
-                log.warning("⚠ Retry account gagal: %s", str(e)[:80])
-
-        if not account_selected:
-            log.error("✗ Gagal pilih Account Resources setelah retry - abort Module 5")
-            return None
 
         # --- Step F: Klik "Continue to summary" ---
         log.info("→ Klik 'Continue to summary'...")
